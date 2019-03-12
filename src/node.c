@@ -111,6 +111,18 @@ void free_node(node_t *n) {
 	free(n->hostname);
 	free(n->name);
 	free(n->late);
+	/* The fec ctx need freed */
+	if (n->fec_ctx)
+	{
+		if (n->fec_timer_started == 1)
+		{
+			timeout_del(&n->fec_timeout);
+			n->fec_timer_started = 0;
+		}
+		myfec_exit(n->fec_ctx);
+		free(n->fec_ctx);
+		n->fec_ctx = NULL;
+	}
 
 	if(n->address_cache) {
 		close_address_cache(n->address_cache);
@@ -193,6 +205,8 @@ void update_node_udp(node_t *n, const sockaddr_t *sa) {
 	n->mtuprobes = 0;
 	n->minmtu = 0;
 	n->maxmtu = MTU;
+	/* invalidate fec, added by dailei */
+	n->status.fec_confirmed = false;
 }
 
 bool dump_nodes(connection_t *c) {

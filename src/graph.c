@@ -258,6 +258,8 @@ static void check_reachability(void) {
 			n->maxrecentlen = 0;
 			n->minmtu = 0;
 			n->mtuprobes = 0;
+			/* invalidate fec, added by dailei */
+			n->status.fec_confirmed = false;
 
 			timeout_del(&n->udp_ping_timeout);
 

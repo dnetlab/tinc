@@ -49,6 +49,7 @@
 #include "route.h"
 #include "utils.h"
 #include "xalloc.h"
+#include "myfec.h"
 
 #ifndef MAX
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
@@ -66,6 +67,10 @@ static char lzo_wrkmem[LZO1X_999_MEM_COMPRESS > LZO1X_1_MEM_COMPRESS ? LZO1X_999
 
 static void send_udppacket(node_t *, vpn_packet_t *);
 
+static void send_to_fec_only(node_t *n, int sock, sockaddr_t* sa);
+
+static void dump_data_header(unsigned char* data);
+
 unsigned replaywin = 32;
 bool localdiscovery = true;
 bool udp_discovery = true;
@@ -74,6 +79,11 @@ int udp_discovery_interval = 2;
 int udp_discovery_timeout = 30;
 
 #define MAX_SEQNO 1073741824
+
+static void adapt_socket(const sockaddr_t *sa, int *sock);
+static void choose_udp_address(const node_t *n, const sockaddr_t **sa, int *sock);
+
+static void choose_local_address(const node_t *n, const sockaddr_t **sa, int *sock);
 
 static void try_fix_mtu(node_t *n) {
 	if(n->mtuprobes < 0) {
@@ -108,6 +118,48 @@ static void udp_probe_timeout_handler(void *data) {
 	n->minmtu = 0;
 	n->maxmtu = MTU;
 }
+
+static void fec_encode_timeout_handler(void *data) {
+	node_t *n = (node_t* )data;
+	//MY_DEBUG_INFO("timer expired\n");
+	timeout_del(&n->fec_timeout);
+	n->fec_timer_started = 0;
+	myfec_encode_output(n->fec_ctx);
+
+	const sockaddr_t *sa = NULL;
+	int sock;
+
+	if(n->status.send_locally) {
+		choose_local_address(n, &sa, &sock);
+	}
+
+	if(!sa) {
+		choose_udp_address(n, &sa, &sock);
+	}
+
+	if (sa)
+	{
+		send_to_fec_only(n, sock, sa);
+	}
+	else
+	{
+		logger(DEBUG_TRAFFIC, LOG_INFO, "Sending fec to error");
+	}
+}
+
+static void send_fec_probe_reply(node_t *n, vpn_packet_t *packet, length_t len) {
+	/* Legacy protocol: n won't understand type 2 probe replies. */
+	DATA(packet)[0] = 0x81;
+	logger(DEBUG_TRAFFIC, LOG_INFO, "Sending fec probe reply length %u to %s (%s)", len, n->name, n->hostname);
+
+	/* Temporarily set udp_confirmed, so that the reply is sent
+	   back exactly the way it came in. */
+
+	if (n->status.udp_confirmed) {
+		send_udppacket(n, packet);
+	}
+}
+
 
 static void send_udp_probe_reply(node_t *n, vpn_packet_t *packet, length_t len) {
 	if(!n->status.sptps && !n->status.validkey) {
@@ -151,6 +203,26 @@ static void udp_probe_h(node_t *n, vpn_packet_t *packet, length_t len) {
 		memcpy(&len16, DATA(packet) + 1, 2);
 		len = ntohs(len16);
 	}
+	/* if it's a fec probe packet, then reply */
+	else if(DATA(packet)[0] == 0x80) {
+		n->status.fec_confirmed = 1;
+		logger(DEBUG_TRAFFIC, LOG_INFO, "Got FEC probe %d from %s (%s)", packet->len, n->name, n->hostname);
+		if (!n->fec_ctx) {
+			n->fec_ctx = (myfec_ctx_t* )xzalloc(sizeof(myfec_ctx_t));
+			myfec_init(n->fec_ctx, 100, 3, 1400, 10);
+		}
+		send_fec_probe_reply(n, packet, len);
+	}
+	/* if it's a fec probe reply packet, then fec tunnel established, added by dailei */
+	else if(DATA(packet)[0] == 0x81) {
+		n->status.fec_confirmed = 1;
+		logger(DEBUG_TRAFFIC, LOG_INFO, "Got FEC probe reply %d from %s (%s)", packet->len, n->name, n->hostname);
+		if (!n->fec_ctx) {
+			n->fec_ctx = (myfec_ctx_t* )xzalloc(sizeof(myfec_ctx_t));
+			myfec_init(n->fec_ctx, 100, 3, 1400, 10);
+		}
+	}
+
 
 	if(n->status.ping_sent) {  // a probe in flight
 		gettimeofday(&now, NULL);
@@ -295,6 +367,40 @@ static void receive_packet(node_t *n, vpn_packet_t *packet) {
 
 	route(n, packet);
 }
+
+/* receive a fec packet, added by dailei */
+static void receive_fec_packet(node_t *n, vpn_packet_t *packet) {
+	logger(DEBUG_TRAFFIC, LOG_DEBUG, "Received FEC packet len = %d", packet->len);
+	//dump_data_header(DATA(packet) + 14);
+	logger(DEBUG_TRAFFIC, LOG_DEBUG, "FEC ctx = %p", n->fec_ctx);
+	int dec_ret = myfec_decode(n->fec_ctx, DATA(packet) + 14, packet->len - packet->offset - 14);
+	logger(DEBUG_TRAFFIC, LOG_DEBUG, "Received FEC packet decode ret = %d", dec_ret);
+	if (dec_ret == 1)
+	{
+		int i;
+		for(i = 0; i < n->fec_ctx->de_cnt; i++)
+		{
+			int tun_len = n->fec_ctx->de_buf[i].buf_len;
+			char* tun_data = n->fec_ctx->de_buf[i].buf_ptr;
+			vpn_packet_t fec_pkt;
+			fec_pkt.offset = DEFAULT_PACKET_OFFSET;
+			fec_pkt.len = tun_len;
+			fec_pkt.priority = packet->priority;
+			//dump_data_header(tun_data);
+			memcpy(SEQNO(&fec_pkt), tun_data, 4);
+			//memcpy(DATA(&fec_pkt), tun_data + 14, tun_len - 4 - 14);
+			//memcpy(DATA(&fec_pkt), tun_data + 4, tun_len);
+			memcpy(DATA(&fec_pkt), tun_data, tun_len);
+			n->in_packets++;
+			n->in_bytes += fec_pkt.len;
+
+			route(n, &fec_pkt);
+			//write_tun(tun_fd, tun_data, tun_len);
+		}
+	}
+}
+
+
 
 static bool try_mac(node_t *n, const vpn_packet_t *inpkt) {
 	if(n->status.sptps) {
@@ -475,7 +581,11 @@ static bool receive_udppacket(node_t *n, vpn_packet_t *inpkt) {
 
 	if(!DATA(inpkt)[12] && !DATA(inpkt)[13]) {
 		udp_probe_h(n, inpkt, origlen);
-	} else {
+	}
+	else if(DATA(inpkt)[12] ==0x00 && DATA(inpkt)[13] == 0x01) {
+		receive_fec_packet(n, inpkt);
+	}
+	else {
 		receive_packet(n, inpkt);
 	}
 
@@ -619,7 +729,85 @@ static void send_sptps_packet(node_t *n, vpn_packet_t *origpkt) {
 	return;
 }
 
-static void adapt_socket(const sockaddr_t *sa, int *sock) {
+/* used for debug fec packet format */
+void dump_data_header(unsigned char* data)
+{
+	logger(DEBUG_TRAFFIC, LOG_INFO, "data[%d]:", 20);
+	int i;
+	for(i = 0; i < 34; i++)
+	{
+		logger(DEBUG_TRAFFIC, LOG_INFO, "%02d : %02x", i, data[i]);
+	}
+}
+
+static void send_fec_crypt_data(node_t *n, char* fec_data, int fec_len, int sock, sockaddr_t* sa)
+{
+	vpn_packet_t new_inpkt;
+	new_inpkt.offset = DEFAULT_PACKET_OFFSET;
+	new_inpkt.len = fec_len + 14 + 4;
+
+	seqno_t seqno = htonl(++(n->sent_seqno));
+	memcpy(SEQNO(&new_inpkt), (void*)&seqno, sizeof(seqno));
+	memset(DATA(&new_inpkt), 0, 14);
+	memcpy(DATA(&new_inpkt) + 14, fec_data, fec_len);
+	/* MARK this as a fec packet */
+	DATA(&new_inpkt)[12] = 0;
+	DATA(&new_inpkt)[13] = 1;
+
+	vpn_packet_t pkt1, pkt2;
+	vpn_packet_t *pkt[] = { &pkt1, &pkt2, &pkt1, &pkt2 };
+	pkt1.offset = DEFAULT_PACKET_OFFSET;
+	pkt2.offset = DEFAULT_PACKET_OFFSET;
+
+	int nextpkt = 0;
+	vpn_packet_t* inpkt = &new_inpkt;
+	vpn_packet_t* outpkt = pkt[nextpkt++];
+	logger(DEBUG_TRAFFIC, LOG_INFO, "Info Origal packet len %d", inpkt->len);
+	//dump_data_header(DATA(inpkt));
+	//dump_data_header(fec_data);
+	if(n->outcompression) {
+		outpkt = pkt[nextpkt++];
+
+		if((outpkt->len = compress_packet(DATA(outpkt), DATA(inpkt), inpkt->len, n->outcompression)) < 0) {
+			logger(DEBUG_TRAFFIC, LOG_ERR, "Error while compressing fec packet to %s (%s)",
+			       n->name, n->hostname);
+			return;
+		}
+
+		inpkt = outpkt;
+		logger(DEBUG_TRAFFIC, LOG_INFO, "Info Compress packet len %d", inpkt->len);
+	}
+
+	if(cipher_active(n->outcipher)) {
+		outpkt = pkt[nextpkt++];
+		int outlen = MAXSIZE;
+
+		if(!cipher_encrypt(n->outcipher, SEQNO(inpkt), inpkt->len, SEQNO(outpkt), &outlen, true)) {
+			logger(DEBUG_TRAFFIC, LOG_ERR, "Error while encrypting fec packet to %s (%s)", n->name, n->hostname);
+			return;
+		}
+
+		outpkt->len = outlen;
+		inpkt = outpkt;
+		logger(DEBUG_TRAFFIC, LOG_INFO, "Info Cipher packet len %d", inpkt->len);
+	}
+
+	/* Add the message authentication code */
+
+	if(digest_active(n->outdigest)) {
+		if(!digest_create(n->outdigest, SEQNO(inpkt), inpkt->len, SEQNO(inpkt) + inpkt->len)) {
+			logger(DEBUG_TRAFFIC, LOG_ERR, "Error while digesting fec packet to %s (%s)", n->name, n->hostname);
+			return;
+		}
+
+		inpkt->len += digest_length(n->outdigest);
+		logger(DEBUG_TRAFFIC, LOG_INFO, "Info Digest packet len %d", inpkt->len);
+	}
+
+	sendto(listen_socket[sock].udp.fd, SEQNO(inpkt), inpkt->len, 0, &sa->sa, SALEN(sa->sa));
+}
+
+void adapt_socket(const sockaddr_t *sa, int *sock) {
 	/* Make sure we have a suitable socket for the chosen address */
 	if(listen_socket[*sock].sa.sa.sa_family != sa->sa.sa_family) {
 		for(int i = 0; i < listen_sockets; i++) {
@@ -631,7 +819,7 @@ static void adapt_socket(const sockaddr_t *sa, int *sock) {
 	}
 }
 
-static void choose_udp_address(const node_t *n, const sockaddr_t **sa, int *sock) {
+void choose_udp_address(const node_t *n, const sockaddr_t **sa, int *sock) {
 	/* Latest guess */
 	*sa = &n->address;
 	*sock = n->sock;
@@ -674,7 +862,7 @@ static void choose_udp_address(const node_t *n, const sockaddr_t **sa, int *sock
 	adapt_socket(*sa, sock);
 }
 
-static void choose_local_address(const node_t *n, const sockaddr_t **sa, int *sock) {
+void choose_local_address(const node_t *n, const sockaddr_t **sa, int *sock) {
 	*sa = NULL;
 
 	/* Pick one of the edges from this node at random, then use its local address. */
@@ -696,6 +884,71 @@ static void choose_local_address(const node_t *n, const sockaddr_t **sa, int *so
 		adapt_socket(*sa, sock);
 	}
 }
+
+void send_to_fec_only(node_t *n, int sock, sockaddr_t* sa)
+{
+	logger(DEBUG_TRAFFIC, LOG_INFO, "Need fec encode now");
+	myfec_encode_output(n->fec_ctx);
+	//TODO:sendto remote side
+	int i;
+	for(i = 0; i < n->fec_ctx->en_x + n->fec_ctx->en_y; i++)
+	{
+
+		char* packet = n->fec_ctx->end_buf + (n->fec_ctx->en_feclen + n->fec_ctx->en_headerlen) * i;
+		//udp_sendto(sock_fd, packet, n->fec_ctx.en_feclen + n->fec_ctx.en_headerlen, &n->peer_addr);
+		//sendto(listen_socket[sock].udp.fd, packet, n->fec_ctx->en_feclen + n->fec_ctx->en_headerlen, 0, &sa->sa, SALEN(sa->sa));
+		send_fec_crypt_data(n, packet, n->fec_ctx->en_feclen + n->fec_ctx->en_headerlen, sock, sa);
+	}
+}
+
+/* send to fec buf, and encode */
+static void send_to_fec(node_t *n, vpn_packet_t *inpkt, int sock, sockaddr_t* sa) {
+	//int input_ret = myfec_encode_input(n->fec_ctx, SEQNO(inpkt), inpkt->len);
+	int input_ret = myfec_encode_input(n->fec_ctx, DATA(inpkt), inpkt->len);
+	logger(DEBUG_TRAFFIC, LOG_INFO, "myfec_encode_input ret %d", input_ret);
+	//MY_DEBUG_INFO("encode input ret = %d\n", input_ret);
+	if (input_ret == 1)
+	{
+		logger(DEBUG_TRAFFIC, LOG_INFO, "Need fec encode now");
+		send_to_fec_only(n, sock, sa);
+		//stop the timer
+		//ev_timer_stop(main_loop, &remote_node->timer);
+		timeout_del(&n->fec_timeout);
+		n->fec_timer_started = 0;
+		//MY_DEBUG_INFO("stop timer 1\n");
+	}
+	else
+	{
+		if (n->fec_timer_started == 0)
+		{
+			//MY_DEBUG_INFO("start timer 1\n");
+			//ev_timer_set(&remote_node->timer, TUN_TIMEOUT/1000.0, 0.);
+			//ev_timer_start(main_loop, &remote_node->timer);
+			struct timeval tv;
+			tv.tv_sec = 0;
+			tv.tv_usec = 4000;
+			timeout_add(&n->fec_timeout, fec_encode_timeout_handler, n, &tv);
+			n->fec_timer_started = 1;
+		}
+	}
+}
+
+static void send_fecpacket2(node_t *n, vpn_packet_t *origpkt)
+{
+	const sockaddr_t *sa = NULL;
+	int sock;
+
+	if(n->status.send_locally) {
+		choose_local_address(n, &sa, &sock);
+	}
+
+	if(!sa) {
+		choose_udp_address(n, &sa, &sock);
+	}
+	send_to_fec(n, origpkt, sock, sa);
+	return;
+}
+
 
 static void send_udppacket(node_t *n, vpn_packet_t *origpkt) {
 	if(!n->status.reachable) {
@@ -1080,6 +1333,23 @@ static void try_sptps(node_t *n) {
 	return;
 }
 
+static void send_fec_probe_packet(node_t *n, int len) {
+	if (n->status.udp_confirmed == 1)
+	{
+		vpn_packet_t packet;
+		packet.offset = DEFAULT_PACKET_OFFSET;
+		memset(DATA(&packet), 0, 14);
+		randomize(DATA(&packet) + 14, len - 14);
+		DATA(&packet)[0] = 0x80;
+		packet.len = len;
+		packet.priority = 0;
+
+		logger(DEBUG_TRAFFIC, LOG_INFO, "Sending FEC probe length %d to %s (%s)", len, n->name, n->hostname);
+
+		send_udppacket(n, &packet);
+	}
+}
+
 static void send_udp_probe_packet(node_t *n, int len) {
 	vpn_packet_t packet;
 	packet.offset = DEFAULT_PACKET_OFFSET;
@@ -1139,6 +1409,10 @@ static void try_udp(node_t *n) {
 			n->status.send_locally = true;
 			send_udp_probe_packet(n, MIN_PROBE_SIZE);
 			n->status.send_locally = false;
+		}
+		/* if udp confirmed, then try probe fec, added by dailei */
+		if (n->status.udp_confirmed) {
+			send_fec_probe_packet(n, MIN_PROBE_SIZE);
 		}
 	}
 }
@@ -1499,7 +1773,16 @@ void send_packet(node_t *n, vpn_packet_t *packet) {
 		return;
 	}
 
-	send_udppacket(via, packet);
+	if (n->status.udp_confirmed && n->status.fec_confirmed)
+	{
+		logger(DEBUG_TRAFFIC, LOG_INFO, "Trying to send FEC packet to node %s (%s)", n->name, n->hostname);
+		send_fecpacket2(n, packet);
+		return;
+	}
+	else
+	{
+		send_udppacket(via, packet);
+	}
 	try_tx(via, true);
 }
 

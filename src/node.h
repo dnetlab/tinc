@@ -27,6 +27,7 @@
 #include "digest.h"
 #include "event.h"
 #include "subnet.h"
+#include "myfec.h"
 
 typedef struct node_status_t {
 	unsigned int unused_active: 1;          /* 1 if active (not used for nodes) */
@@ -41,8 +42,9 @@ typedef struct node_status_t {
 	unsigned int udppacket: 1;              /* 1 if the most recently received packet was UDP */
 	unsigned int validkey_in: 1;            /* 1 if we have sent a valid key to him */
 	unsigned int has_address: 1;            /* 1 if we know an external address for this node */
-	unsigned int ping_sent: 1;              /* 1 if we sent a UDP probe but haven't received the reply yet */
-	unsigned int unused: 19;
+	unsigned int ping_sent:1;               /* 1 if we sent a UDP probe but haven't received the reply yet */
+	unsigned int fec_confirmed: 1;          /* 1 if we establish a fec tunnel */
+	unsigned int unused: 18;
 } node_status_t;
 
 typedef struct node_t {
@@ -114,6 +116,9 @@ typedef struct node_t {
 	uint64_t out_bytes;
 
 	struct address_cache_t *address_cache;
+	myfec_ctx_t* fec_ctx;                   /* FEC ctx */
+	timeout_t    fec_timeout;               /* FEC send buffer timeout event */
+	int          fec_timer_started;         /* FEC timer started flag */
 } node_t;
 
 extern struct node_t *myself;
