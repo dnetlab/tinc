@@ -27,7 +27,7 @@ AC_DEFUN([tinc_MYFEC],
     )
 
     AC_CHECK_LIB(myfec, myfec_init,
-      [LIBS="-lmyfec"],
+      [LIBS="-lmyfec $LIBS"],
       [AC_MSG_ERROR("myfec libraries not found.")]
     )
 
