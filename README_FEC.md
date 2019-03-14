@@ -6,6 +6,8 @@
 
 ##FEC Probe after udp tunnel established
 
+```
+
 @startuml
 A -> B : send_udp_probe_packet
 B -> A : send_udp_probe_reply
@@ -13,7 +15,12 @@ A -> B : send_fec_probe_packet
 B -> A : send_fec_probe_reply
 @enduml
 
+```
+
 ##FEC Sent to another side
+
+```
+
 @startuml
 A -> A : handle_device_data
 A -> A : route
@@ -22,9 +29,16 @@ A -> A : send_fecpacket
 A -> B : sendto
 @enduml
 
+```
+
 ##FEC feedback
+
+```
+
 @startuml
 B -> B : calculate_packet_lossy
 B -> A : send_fec_feedback
 A -> A : myfec_adjust_params
 @enduml
+
+```
