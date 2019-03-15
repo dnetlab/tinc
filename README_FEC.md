@@ -1,8 +1,8 @@
 
 ##Integration Workflow
 ##Features
-- [] 如果延时小于10ms，不使用FEC
-- [] 使用FEC时，测量丢包率，发包冗余 = 丢包率 x 1.1 with minimal 5%, max 30%
+- [] 如果延时小于10ms (过去10秒的平均值，每隔 10分钟测量一次），不使用FEC
+- [] 使用FEC时，测量丢包率（过去10秒的rolling average），发包冗余 = 丢包率 x 1.1 with minimal 5%, max 30% and Delta each change less than 20%
 
 ##FEC Probe after udp tunnel established
 
