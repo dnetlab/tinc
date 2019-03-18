@@ -1,6 +1,6 @@
 
-#Forward Error Correction
-##Features and Design
+# Forward Error Correction
+## Features and Design
 - [x] compitable with existing version 1.1
 - [x] adding FEC enconding and deconding to net_packet.c
 - [x] 4ms wait or xxx buf limit to trigger the FEC encoding and sent 
@@ -20,9 +20,9 @@
 - fec_encoding_timeout = 4ms
 - fec_encoding_buf_size = 
 
-##Key Workflows
+## Key Workflows
 
-###FEC Probe after udp tunnel established
+### FEC Probe after udp tunnel established
 
 Check if the other node support FEC.
 
@@ -37,7 +37,7 @@ B -> A : send_fec_probe_reply
 
 ```
 
-###FEC Encoding and Decoding
+### FEC Encoding and Decoding
 
 把要发送的UDP数据使用FEC编码和解码
 
@@ -56,7 +56,7 @@ A -> B : sendto
 
 
 
-###FEC Feedback Control
+### FEC Feedback Control
 
 ```
 
