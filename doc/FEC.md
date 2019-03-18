@@ -29,10 +29,10 @@ Check if the other node support FEC.
 ```
 
 @startuml
-A -> B : send_udp_probe_packet
-B -> A : send_udp_probe_reply
-A -> B : send_fec_probe_packet
-B -> A : send_fec_probe_reply
+A -> B : net_packet:send_udp_probe_packet
+B -> A : net_packet:send_udp_probe_reply
+A -> B : net_packet:send_fec_probe_packet
+B -> A : net_packet:send_fec_probe_reply
 @enduml
 
 ```
@@ -70,9 +70,9 @@ B -> B : net_packet:write to vnic...
 ```
 
 @startuml
-B -> B : calculate_packet_lossy
-B -> A : send_fec_feedback
-A -> A : myfec_adjust_params
+B -[#blue]> B : myfec:calculate_packet_lossy
+B -> A : net_packet:send_fec_feedback
+A -[#blue]> A : myfec:myfec_adjust_params
 @enduml
 
 ```
