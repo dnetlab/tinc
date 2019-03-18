@@ -933,7 +933,7 @@ static void send_to_fec(node_t *n, vpn_packet_t *inpkt, int sock, sockaddr_t* sa
 	}
 }
 
-static void send_fecpacket2(node_t *n, vpn_packet_t *origpkt)
+static void send_fecpacket(node_t *n, vpn_packet_t *origpkt)
 {
 	const sockaddr_t *sa = NULL;
 	int sock;
@@ -1776,7 +1776,7 @@ void send_packet(node_t *n, vpn_packet_t *packet) {
 	if (n->status.udp_confirmed && n->status.fec_confirmed)
 	{
 		logger(DEBUG_TRAFFIC, LOG_INFO, "Trying to send FEC packet to node %s (%s)", n->name, n->hostname);
-		send_fecpacket2(n, packet);
+		send_fecpacket(n, packet);
 		return;
 	}
 	else
