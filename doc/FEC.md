@@ -44,12 +44,21 @@ B -> A : send_fec_probe_reply
 ```
 
 @startuml
-A -> A : handle_device_data
-A -> A : route
+A -> A : net_packet:handle_device_data
+A -> A : route:route
+A -> A : route:route_mac
 A -> A : net_packet:send_packet
 A -> A : net_packet:send_fecpacket
 A -> A : net_packet:send_to_fec
-A -> B : sendto
+A -[#blue]> A :myfec:myfec_encode_input
+A -[#blue]> A :myfec:myfec_encode_output
+A -> B : net_packet:sendto
+B -> B : net_packet:handle_incoming_vpn_data
+B -> B : net_packet:handle_incoming_vpn_packet
+B -> B : net_packet:handle_incoming_vpn_packet
+B -> B : net_packet:receive_fecpacket
+B -[#blue]> B : myfec:myfec_decode
+B -> B : net_packet:write to vnic...
 @enduml
 
 ```
