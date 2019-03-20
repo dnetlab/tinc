@@ -119,6 +119,9 @@ typedef struct node_t {
 	myfec_ctx_t* fec_ctx;                   /* FEC ctx */
 	timeout_t    fec_timeout;               /* FEC send buffer timeout event */
 	int          fec_timer_started;         /* FEC timer started flag */
+
+	timeout_t    fec_feedback_timeout;
+	int          fec_feedback_timer_started;         /* FEC timer started flag */
 } node_t;
 
 extern struct node_t *myself;

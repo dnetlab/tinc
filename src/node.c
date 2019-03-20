@@ -119,6 +119,12 @@ void free_node(node_t *n) {
 			timeout_del(&n->fec_timeout);
 			n->fec_timer_started = 0;
 		}
+
+		if (n->fec_feedback_timer_started == 1)
+		{
+			timeout_del(&n->fec_feedback_timeout);
+			n->fec_feedback_timer_started = 0;
+		}
 		myfec_exit(n->fec_ctx);
 		free(n->fec_ctx);
 		n->fec_ctx = NULL;

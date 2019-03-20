@@ -147,6 +147,30 @@ static void fec_encode_timeout_handler(void *data) {
 	}
 }
 
+static void fec_feedback_timeout_handler(void* data) {
+	node_t *n = (node_t* )data;
+	timeout_del(&n->fec_feedback_timeout);
+	n->fec_feedback_timer_started = 0;
+
+	vpn_packet_t packet;
+	packet.offset = DEFAULT_PACKET_OFFSET;
+	memset(DATA(&packet), 0, 14);
+	randomize(DATA(&packet) + 14, len - 14);
+	DATA(&packet)[0] = 0x82;
+	packet.len = MIN_PROBE_SIZE;
+	packet.priority = 0;
+
+	unsigned int lossy = myfec_cal_packet_lossy(n->fec_ctx);
+
+	*(unsigned int*)(DATA(&packet) + 2) = htonl(lossy);
+
+	myfec_reset_packet_lossy(n->fec_ctx);
+
+	logger(DEBUG_TRAFFIC, LOG_INFO, "Sending FEC feedback length %d to %s (%s)", packet.len, n->name, n->hostname);
+
+	send_udppacket(n, &packet);
+}
+
 static void send_fec_probe_reply(node_t *n, vpn_packet_t *packet, length_t len) {
 	/* Legacy protocol: n won't understand type 2 probe replies. */
 	DATA(packet)[0] = 0x81;
@@ -190,6 +214,21 @@ static void send_udp_probe_reply(node_t *n, vpn_packet_t *packet, length_t len) 
 	n->status.udp_confirmed = udp_confirmed;
 }
 
+static int cal_re_num(int lossy, int x)
+{
+	int ret = 0;
+	if (ret <= 0)
+	{
+		ret = 1;
+	}
+	return ret;
+}
+
+static void adjust_fec_params(node_t* n, unsigned int lossy)
+{
+	int y = cal_re_num(lossy, n->fec_ctx->max_fec_x);
+}
+
 static void udp_probe_h(node_t *n, vpn_packet_t *packet, length_t len) {
 	if(!DATA(packet)[0]) {
 		logger(DEBUG_TRAFFIC, LOG_INFO, "Got UDP probe request %d from %s (%s)", packet->len, n->name, n->hostname);
@@ -222,7 +261,11 @@ static void udp_probe_h(node_t *n, vpn_packet_t *packet, length_t len) {
 			myfec_init(n->fec_ctx, 100, 3, 1400, 10);
 		}
 	}
-
+	else if(DATA(packet)[0] == 0x82) {
+		//TODO: receive a fec feedback packet
+		unsigned int lossy = ntohl(*(unsigned int*)(DATA(packet) + 2));
+		adjust_fec_params(n, lossy);
+	}
 
 	if(n->status.ping_sent) {  // a probe in flight
 		gettimeofday(&now, NULL);
@@ -931,6 +974,15 @@ static void send_to_fec(node_t *n, vpn_packet_t *inpkt, int sock, sockaddr_t* sa
 			n->fec_timer_started = 1;
 		}
 	}
+
+	if (n->fec_feedback_timer_started == 0)
+	{
+		struct timeval tv;
+		tv.tv_sec = 10;
+		tv.tv_usec = 0;
+		timeout_add(&n->fec_feedback_timeout, fec_feedback_timeout_handler, n, &tv);
+		n->fec_feedback_timer_started = 1;
+	}
 }
 
 static void send_fecpacket(node_t *n, vpn_packet_t *origpkt)
@@ -1411,7 +1463,7 @@ static void try_udp(node_t *n) {
 			n->status.send_locally = false;
 		}
 		/* if udp confirmed, then try probe fec, added by dailei */
-		if (n->status.udp_confirmed) {
+		if (n->status.udp_confirmed && n->udp_ping_rtt > 10 * 1000) {
 			send_fec_probe_packet(n, MIN_PROBE_SIZE);
 		}
 	}
