@@ -66,7 +66,7 @@ typedef struct connection_t {
 	int protocol_major;             /* used protocol */
 	int protocol_minor;             /* used protocol */
 	int tunnel_type;                /* used tunnel type: tcp, p2p, ws, mqtt, xmpp*/
-                                    /* for the protocol content transmission
+                                    /* for the protocol content transmission */
 	int socket;                     /* socket used for this connection */
 	uint32_t options;               /* options for this connection */
 	connection_status_t status;     /* status info */
