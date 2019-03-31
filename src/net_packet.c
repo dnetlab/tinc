@@ -148,6 +148,7 @@ static void fec_encode_timeout_handler(void *data) {
 }
 
 static void fec_feedback_timeout_handler(void* data) {
+	int len = 0;
 	node_t *n = (node_t* )data;
 	timeout_del(&n->fec_feedback_timeout);
 	n->fec_feedback_timer_started = 0;
@@ -160,11 +161,11 @@ static void fec_feedback_timeout_handler(void* data) {
 	packet.len = MIN_PROBE_SIZE;
 	packet.priority = 0;
 
-	unsigned int lossy = myfec_cal_packet_lossy(n->fec_ctx);
+	//TBD: unsigned int lossy = myfec_cal_packet_lossy(n->fec_ctx);
 
-	*(unsigned int*)(DATA(&packet) + 2) = htonl(lossy);
+	//TBD: *(unsigned int*)(DATA(&packet) + 2) = htonl(lossy);
 
-	myfec_reset_packet_lossy(n->fec_ctx);
+	//TBD: myfec_reset_packet_lossy(n->fec_ctx);
 
 	logger(DEBUG_TRAFFIC, LOG_INFO, "Sending FEC feedback length %d to %s (%s)", packet.len, n->name, n->hostname);
 
