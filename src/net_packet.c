@@ -1769,6 +1769,10 @@ void try_tx(node_t *n, bool mtu) {
 	}
 }
 
+#define SPEED_UNLIMITED (0xFFFFFFFFFFFFFFFFULL)
+
+uint64_t relay_speed_limit = SPEED_UNLIMITED; //unit is bps
+char relay_name[100];
 void send_packet(node_t *n, vpn_packet_t *packet) {
 	// If it's for myself, write it to the tun/tap device.
 
@@ -1797,8 +1801,6 @@ void send_packet(node_t *n, vpn_packet_t *packet) {
 
 	// Keep track of packet statistics.
 
-	n->out_packets++;
-	n->out_bytes += packet->len;
 
 	// Check if it should be sent as an SPTPS packet.
 
@@ -1811,11 +1813,33 @@ void send_packet(node_t *n, vpn_packet_t *packet) {
 	// Determine which node to actually send it to.
 
 	node_t *via = (packet->priority == -1 || n->via == myself) ? n->nexthop : n->via;
-
+	logger(DEBUG_TRAFFIC, LOG_INFO, "node:%s, via:%s", n->name, via->name);
 	if(via != n) {
 		logger(DEBUG_TRAFFIC, LOG_INFO, "Sending packet to %s via %s (%s)", n->name, via->name, n->via->hostname);
 	}
 
+	if (n->nexthop)
+	{
+		logger(DEBUG_TRAFFIC, LOG_INFO, "relay_name:%s, relay_limit:%d, cur_speed: %d", relay_name, (int)relay_speed_limit, (int)((n->out_bytes - n->pre_out_bytes) * 8)/TRAFFIC_TIMEOUT_SEC);
+		//if relay to vpnserver, check the speed limit. If overflow, drop the packet
+		if (strcmp(n->nexthop->name, relay_name) == 0)
+		{
+			if (strcmp(n->nexthop->name, n->name) != 0)
+			{
+				if (relay_speed_limit != SPEED_UNLIMITED)
+				{
+					if ((n->out_bytes - n->pre_out_bytes) * 8 >= relay_speed_limit * TRAFFIC_TIMEOUT_SEC)
+					{
+						logger(DEBUG_TRAFFIC, LOG_INFO, "Drop packet to %s nexthop %s (%s)", n->name, n->nexthop->name, n->nexthop->hostname);
+						return;
+					}
+				}
+			}
+		}
+	}
+
+	n->out_packets++;
+	n->out_bytes += packet->len;
 	// Try to send via UDP, unless TCP is forced.
 
 	if(packet->priority == -1 || ((myself->options | via->options) & OPTION_TCPONLY)) {

@@ -471,6 +471,8 @@ bool setup_myself_reloadable(void) {
 			proxytype = PROXY_SOCKS5;
 		} else if(!strcasecmp(proxy, "http")) {
 			proxytype = PROXY_HTTP;
+		} else if(!strcasecmp(proxy, "httptunnel")) {
+			proxytype = PROXY_HTTPTUNNEL;
 		} else if(!strcasecmp(proxy, "exec")) {
 			proxytype = PROXY_EXEC;
 		} else {
@@ -496,6 +498,7 @@ bool setup_myself_reloadable(void) {
 		case PROXY_SOCKS4A:
 		case PROXY_SOCKS5:
 		case PROXY_HTTP:
+			case PROXY_HTTPTUNNEL:
 			proxyhost = space;
 
 			if(space && (space = strchr(space, ' '))) {
@@ -964,6 +967,24 @@ static bool setup_myself(void) {
 
 		replaywin = (unsigned)replaywin_int;
 		sptps_replaywin = replaywin;
+	}
+
+	char* relay_limit_name = NULL;
+	if (get_config_string(lookup_config(config_tree, "RelayLimitName"), &relay_limit_name))
+	{
+		if (relay_limit_name != NULL)
+		{
+			extern char relay_name[100];
+			strncpy(relay_name, relay_limit_name, sizeof(relay_name) - 1);
+			free(relay_limit_name);
+		}
+	}
+
+	int relay_limit_int = 0;
+	if (get_config_int(lookup_config(config_tree, "RelayLimitSpeed"), &relay_limit_int))
+	{
+		extern uint64_t relay_speed_limit;
+		relay_speed_limit = (uint64_t)relay_limit_int;
 	}
 
 #ifndef DISABLE_LEGACY

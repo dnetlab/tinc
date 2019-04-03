@@ -20,6 +20,7 @@ dnl Checks for programs.
 AC_PROG_CC_C99
 AC_PROG_CPP
 AC_PROG_INSTALL
+AC_PROG_RANLIB
 AM_PROG_CC_C_O
 
 dnl Check whether to enable code coverage testing, and if so, clear the default CFLAGS.

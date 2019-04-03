@@ -538,11 +538,12 @@ int main2(int argc, char **argv) {
 		}
 	}
 
+#if 0
 	/* drop privileges */
 	if(!drop_privs()) {
 		goto end;
 	}
-
+#endif
 	/* Start main loop. It only exits when tinc is killed. */
 
 	logger(DEBUG_ALWAYS, LOG_NOTICE, "Ready");

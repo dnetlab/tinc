@@ -169,6 +169,7 @@ typedef enum proxytype_t {
 	PROXY_SOCKS5,
 	PROXY_HTTP,
 	PROXY_EXEC,
+	PROXY_HTTPTUNNEL,
 } proxytype_t;
 extern proxytype_t proxytype;
 

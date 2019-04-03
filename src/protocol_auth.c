@@ -147,7 +147,8 @@ static bool send_proxyrequest(connection_t *c) {
 
 	case PROXY_EXEC:
 		return true;
-
+	case PROXY_HTTPTUNNEL:
+	    return true;
 	default:
 		logger(DEBUG_ALWAYS, LOG_ERR, "Unknown proxy type");
 		return false;
@@ -937,7 +938,7 @@ static bool upgrade_h(connection_t *c, const char *request) {
 	}
 
 	logger(DEBUG_ALWAYS, LOG_INFO, "Got Ed25519 public key from %s (%s), upgrading!", c->name, c->hostname);
-	append_config_file(c->name, "Ed25519PublicKey", pubkey);
+	//append_config_file(c->name, "Ed25519PublicKey", pubkey);
 	c->allow_request = TERMREQ;
 
 	if(c->outgoing) {

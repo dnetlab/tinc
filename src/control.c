@@ -125,6 +125,9 @@ bool control_h(connection_t *c, const char *request) {
 	case REQ_DUMP_TRAFFIC:
 		return dump_traffic(c);
 
+	case REQ_DUMP_TRAFFIC2:
+	    return dump_traffic2(c);
+
 	case REQ_PCAP:
 		sscanf(request, "%*d %*d %d", &c->outmaclength);
 		c->status.pcap = true;

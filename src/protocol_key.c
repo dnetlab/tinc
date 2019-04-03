@@ -218,7 +218,7 @@ static bool req_key_ext_h(connection_t *c, const char *request, node_t *from, no
 		}
 
 		logger(DEBUG_PROTOCOL, LOG_INFO, "Learned Ed25519 public key from %s (%s)", from->name, from->hostname);
-		append_config_file(from->name, "Ed25519PublicKey", pubkey);
+		//append_config_file(from->name, "Ed25519PublicKey", pubkey);
 		return true;
 	}
 

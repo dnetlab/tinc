@@ -1,8 +1,9 @@
 ## Produce this file with automake to get Makefile.in
 
-sbin_PROGRAMS = tincd tinc
+sbin_PROGRAMS = tincd tinc tinctop
 check_PROGRAMS = sptps_test sptps_keypair
 EXTRA_PROGRAMS = sptps_test sptps_keypair
+noinst_LIBRARIES = libtinctool.a
 
 CLEANFILES = version_git.h
 
@@ -126,6 +127,55 @@ tinc_SOURCES = \
 	ed25519/ecdsagen.c \
 	$(ed25519_SOURCES) \
 	$(chacha_poly1305_SOURCES)
+	
+tinctop_SOURCES = \
+	dropin.c dropin.h \
+	fsck.c fsck.h \
+	ifconfig.c ifconfig.h \
+	info.c info.h \
+	invitation.c invitation.h \
+	list.c list.h \
+	names.c names.h \
+	netutl.c netutl.h \
+	script.c script.h \
+	sptps.c sptps.h \
+	subnet_parse.c subnet.h \
+	tinctop.c tinctop.h \
+	cJSON.c cJSON.h \
+	topex.c topex.h \
+	utils.c utils.h \
+	version.c version.h \
+	ed25519/ecdh.c \
+	ed25519/ecdsa.c \
+	ed25519/ecdsagen.c \
+	$(ed25519_SOURCES) \
+	$(chacha_poly1305_SOURCES)
+
+libtinctool_a_SOURCES = \
+	dropin.c dropin.h \
+	fsck.c fsck.h \
+	ifconfig.c ifconfig.h \
+	info.c info.h \
+	invitation.c invitation.h \
+	list.c list.h \
+	names.c names.h \
+	netutl.c netutl.h \
+	script.c script.h \
+	sptps.c sptps.h \
+	subnet_parse.c subnet.h \
+	tinctool.c tinctool.h \
+	cJSON.c cJSON.h \
+	topex.c topex.h \
+	utils.c utils.h \
+	version.c version.h \
+	ed25519/ecdh.c \
+	ed25519/ecdsa.c \
+	ed25519/ecdsagen.c \
+	$(ed25519_SOURCES) \
+	$(chacha_poly1305_SOURCES)
+
+libtinctool.so: $(libtinctool_a_SOURCES:%.c=%.o)
+	$(CC) -o $@ -shared $^
 
 sptps_test_SOURCES = \
 	logger.c logger.h \
@@ -161,6 +211,12 @@ tincd_SOURCES += \
 	getopt.c getopt.h \
 	getopt1.c
 tinc_SOURCES += \
+	getopt.c getopt.h \
+	getopt1.c
+tinctop_SOURCES += \
+	getopt.c getopt.h \
+	getopt1.c
+libtinctool_a_SOURCES += \
 	getopt.c getopt.h \
 	getopt1.c
 sptps_test_SOURCES += \
@@ -212,6 +268,20 @@ tinc_SOURCES += \
 	openssl/prf.c \
 	openssl/rsa.c \
 	openssl/rsagen.c
+tinctop_SOURCES += \
+	openssl/cipher.c \
+	openssl/crypto.c \
+	openssl/digest.c openssl/digest.h \
+	openssl/prf.c \
+	openssl/rsa.c \
+	openssl/rsagen.c
+libtinctool_a_SOURCES += \
+	openssl/cipher.c \
+	openssl/crypto.c \
+	openssl/digest.c openssl/digest.h \
+	openssl/prf.c \
+	openssl/rsa.c \
+	openssl/rsagen.c
 sptps_test_SOURCES += \
 	openssl/crypto.c \
 	openssl/digest.c openssl/digest.h \
@@ -237,6 +307,20 @@ tinc_SOURCES += \
 	gcrypt/prf.c \
 	gcrypt/rsa.c \
 	gcrypt/rsagen.c
+tinctop_SOURCES += \
+	gcrypt/cipher.c \
+	gcrypt/crypto.c \
+	gcrypt/digest.c gcrypt/digest.h \
+	gcrypt/prf.c \
+	gcrypt/rsa.c \
+	gcrypt/rsagen.c
+libtinctool_a_SOURCES += \
+	gcrypt/cipher.c \
+	gcrypt/crypto.c \
+	gcrypt/digest.c gcrypt/digest.h \
+	gcrypt/prf.c \
+	gcrypt/rsa.c \
+	gcrypt/rsagen.c
 sptps_test_SOURCES += \
 	gcrypt/cipher.c \
 	gcrypt/crypto.c \
@@ -253,6 +337,12 @@ tincd_SOURCES += \
 	nolegacy/crypto.c \
 	nolegacy/prf.c
 tinc_SOURCES += \
+	nolegacy/crypto.c \
+	nolegacy/prf.c
+tinctop_SOURCES += \
+	nolegacy/crypto.c \
+	nolegacy/prf.c
+libtinctool_a_SOURCES += \
 	nolegacy/crypto.c \
 	nolegacy/prf.c
 sptps_test_SOURCES += \
@@ -273,6 +363,7 @@ tincd_LDFLAGS = -pthread
 endif
 
 tinc_LDADD = $(READLINE_LIBS) $(CURSES_LIBS)
+tinctop_LDADD = $(READLINE_LIBS) $(CURSES_LIBS)
 sptps_speed_LDADD = -lrt
 
 LIBS = @LIBS@ -lm $(CODE_COVERAGE_LIBS)

@@ -29,6 +29,8 @@
 #include "subnet.h"
 #include "myfec.h"
 
+#define TRAFFIC_TIMEOUT_SEC (5)
+
 typedef struct node_status_t {
 	unsigned int unused_active: 1;          /* 1 if active (not used for nodes) */
 	unsigned int validkey: 1;               /* 1 if we currently have a valid key for him */
@@ -114,6 +116,18 @@ typedef struct node_t {
 	uint64_t in_bytes;
 	uint64_t out_packets;
 	uint64_t out_bytes;
+	
+	uint64_t pre_in_packets;
+	uint64_t pre_in_bytes;
+	uint64_t pre_out_packets;
+	uint64_t pre_out_bytes;
+
+	uint64_t cur_in_bps;		/* the speed form node in bps */
+	uint64_t cur_out_bps;		/* the speed to node in bps */
+	uint64_t cur_in_pps;		/* the speed form node in bps */
+	uint64_t cur_out_pps;		/* the speed to node in bps */
+	
+	timeout_t traffic_timeout;	/* traffic timeout event */
 
 	struct address_cache_t *address_cache;
 	myfec_ctx_t* fec_ctx;                   /* FEC ctx */

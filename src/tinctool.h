@@ -1,10 +1,6 @@
-#ifndef TINC_CONTROL_COMMON_H
-#define TINC_CONTROL_COMMON_H
-
 /*
-    control_protocol.h -- control socket protocol.
-    Copyright (C) 2007      Scott Lamb <slamb@slamb.org>
-                  2009-2012 Guus Sliepen <guus@tinc-vpn.org>
+    tincctl.h -- header for tincctl.c.
+    Copyright (C) 2011-2016 Guus Sliepen <guus@tinc-vpn.org>
 
     This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -21,29 +17,20 @@
     51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#include "protocol.h"
+#ifndef __TINC_TINCTOOL_H__
+#define __TINC_TINCTOOL_H__
 
-enum request_type {
-	REQ_INVALID = -1,
-	REQ_STOP = 0,
-	REQ_RELOAD,
-	REQ_RESTART,
-	REQ_DUMP_NODES,
-	REQ_DUMP_EDGES,
-	REQ_DUMP_SUBNETS,
-	REQ_DUMP_CONNECTIONS,
-	REQ_DUMP_GRAPH,
-	REQ_PURGE,
-	REQ_SET_DEBUG,
-	REQ_RETRY,
-	REQ_CONNECT,
-	REQ_DISCONNECT,
-	REQ_DUMP_TRAFFIC,
-	REQ_DUMP_TRAFFIC2,
-	REQ_PCAP,
-	REQ_LOG,
-};
+#include "cJSON.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-#define TINC_CTL_VERSION_CURRENT 0
+cJSON* tinctool_dump_traffic(char* tinc_base, char* tinc_pid);
+cJSON* tinctool_info_node(char* tinc_base, char* tinc_pid, char* node_name);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
+
