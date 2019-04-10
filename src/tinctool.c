@@ -77,6 +77,9 @@ bool netnamegiven = false;
 char *scriptinterpreter = NULL;
 char *scriptextension = "";
 static char *prompt;
+char *device = NULL;
+char *iface = NULL;
+int debug_level = -1;
 
 static struct option const long_options[] = {
 	{"batch", no_argument, NULL, 'b'},

@@ -643,11 +643,6 @@ void setup_outgoing_connection(outgoing_t *outgoing, bool verbose) {
 		}
 	}
 	
-	if (outgoing->config_tree)
-	{
-		exit_configuration(&outgoing->config_tree);
-	}
-
 	if(!outgoing->address_cache) {
 		outgoing->address_cache = open_address_cache(n);
 	}
