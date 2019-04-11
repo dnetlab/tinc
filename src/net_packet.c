@@ -78,7 +78,7 @@ int udp_discovery_keepalive_interval = 10;
 int udp_discovery_interval = 2;
 int udp_discovery_timeout = 30;
 
-char *fec_enable = NULL;
+int fec_re_num = 0;
 
 #define MAX_SEQNO 1073741824
 
@@ -250,14 +250,17 @@ static void udp_probe_h(node_t *n, vpn_packet_t *packet, length_t len) {
 	 * it's a fec probe packet, then reply.
 	 *  fec add by dailei
 	 *  fec_enable add by yanbowen*/
-	get_config_string(lookup_config(config_tree, "Fec"), &fec_enable);
-	if (strcmp(fec_enable, "true") == 0 && DATA(packet)[0] != 2) {
+	char *fec_re_num_str = NULL;
+	get_config_string(lookup_config(config_tree, "FecPercent"), &fec_re_num_str);
+	fec_re_num = strtol(fec_re_num_str, NULL, 10) / 10;
+	free(fec_re_num_str);
+	if (fec_re_num != 0 && DATA(packet)[0] != 2) {
 		if(DATA(packet)[0] == 0x80) {
 			n->status.fec_confirmed = 1;
 			logger(DEBUG_TRAFFIC, LOG_INFO, "Got FEC probe %d from %s (%s)", packet->len, n->name, n->hostname);
 			if (!n->fec_ctx) {
 				n->fec_ctx = (myfec_ctx_t* )xzalloc(sizeof(myfec_ctx_t));
-				myfec_init(n->fec_ctx, 100, 3, 1400, 10);
+				myfec_init(n->fec_ctx, 100, fec_re_num, 1400, 10);
 			}
 			send_fec_probe_reply(n, packet, len);
 		}
@@ -267,7 +270,7 @@ static void udp_probe_h(node_t *n, vpn_packet_t *packet, length_t len) {
 			logger(DEBUG_TRAFFIC, LOG_INFO, "Got FEC probe reply %d from %s (%s)", packet->len, n->name, n->hostname);
 			if (!n->fec_ctx) {
 				n->fec_ctx = (myfec_ctx_t* )xzalloc(sizeof(myfec_ctx_t));
-				myfec_init(n->fec_ctx, 100, 3, 1400, 10);
+				myfec_init(n->fec_ctx, 100, fec_re_num, 1400, 10);
 			}
 		}
 		else if(DATA(packet)[0] == 0x82) {
@@ -1478,9 +1481,12 @@ static void try_udp(node_t *n) {
 
 		/* Get fec_enable from tinc.conf
 		 * if tinc.conf Fec=true, then enter try fec, added by yanbowen */
-		get_config_string(lookup_config(config_tree, "Fec"), &fec_enable);
+		char *fec_re_num_str = NULL;
+		get_config_string(lookup_config(config_tree, "FecPercent"), &fec_re_num_str);
+		fec_re_num = strtol(fec_re_num_str, NULL, 10) / 10;
+		free(fec_re_num_str);
 		/* if udp confirmed, then try probe fec, added by dailei */
-		if (strcmp(fec_enable, "true") == 0) {
+		if (fec_re_num != 0) {
 			if (n->status.udp_confirmed && n->udp_ping_rtt > 10 * 1000) {
 				send_fec_probe_packet(n, MIN_PROBE_SIZE);
 			}
