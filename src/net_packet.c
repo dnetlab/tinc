@@ -78,6 +78,8 @@ int udp_discovery_keepalive_interval = 10;
 int udp_discovery_interval = 2;
 int udp_discovery_timeout = 30;
 
+char *fec_enable = NULL;
+
 #define MAX_SEQNO 1073741824
 
 static void adapt_socket(const sockaddr_t *sa, int *sock);
@@ -243,29 +245,36 @@ static void udp_probe_h(node_t *n, vpn_packet_t *packet, length_t len) {
 		memcpy(&len16, DATA(packet) + 1, 2);
 		len = ntohs(len16);
 	}
-	/* if it's a fec probe packet, then reply */
-	else if(DATA(packet)[0] == 0x80) {
-		n->status.fec_confirmed = 1;
-		logger(DEBUG_TRAFFIC, LOG_INFO, "Got FEC probe %d from %s (%s)", packet->len, n->name, n->hostname);
-		if (!n->fec_ctx) {
-			n->fec_ctx = (myfec_ctx_t* )xzalloc(sizeof(myfec_ctx_t));
-			myfec_init(n->fec_ctx, 100, 3, 1400, 10);
+
+	/* if fec enable &&
+	 * it's a fec probe packet, then reply.
+	 *  fec add by dailei
+	 *  fec_enable add by yanbowen*/
+	get_config_string(lookup_config(config_tree, "Fec"), &fec_enable);
+	if (strcmp(fec_enable, "true") == 0 && DATA(packet)[0] != 2) {
+		if(DATA(packet)[0] == 0x80) {
+			n->status.fec_confirmed = 1;
+			logger(DEBUG_TRAFFIC, LOG_INFO, "Got FEC probe %d from %s (%s)", packet->len, n->name, n->hostname);
+			if (!n->fec_ctx) {
+				n->fec_ctx = (myfec_ctx_t* )xzalloc(sizeof(myfec_ctx_t));
+				myfec_init(n->fec_ctx, 100, 3, 1400, 10);
+			}
+			send_fec_probe_reply(n, packet, len);
 		}
-		send_fec_probe_reply(n, packet, len);
-	}
-	/* if it's a fec probe reply packet, then fec tunnel established, added by dailei */
-	else if(DATA(packet)[0] == 0x81) {
-		n->status.fec_confirmed = 1;
-		logger(DEBUG_TRAFFIC, LOG_INFO, "Got FEC probe reply %d from %s (%s)", packet->len, n->name, n->hostname);
-		if (!n->fec_ctx) {
-			n->fec_ctx = (myfec_ctx_t* )xzalloc(sizeof(myfec_ctx_t));
-			myfec_init(n->fec_ctx, 100, 3, 1400, 10);
+		/* if it's a fec probe reply packet, then fec tunnel established, added by dailei */
+		else if(DATA(packet)[0] == 0x81) {
+			n->status.fec_confirmed = 1;
+			logger(DEBUG_TRAFFIC, LOG_INFO, "Got FEC probe reply %d from %s (%s)", packet->len, n->name, n->hostname);
+			if (!n->fec_ctx) {
+				n->fec_ctx = (myfec_ctx_t* )xzalloc(sizeof(myfec_ctx_t));
+				myfec_init(n->fec_ctx, 100, 3, 1400, 10);
+			}
 		}
-	}
-	else if(DATA(packet)[0] == 0x82) {
-		//TODO: receive a fec feedback packet
-		unsigned int lossy = ntohl(*(unsigned int*)(DATA(packet) + 2));
-		adjust_fec_params(n, lossy);
+		else if(DATA(packet)[0] == 0x82) {
+			//TODO: receive a fec feedback packet
+			unsigned int lossy = ntohl(*(unsigned int*)(DATA(packet) + 2));
+			adjust_fec_params(n, lossy);
+		}
 	}
 
 	if(n->status.ping_sent) {  // a probe in flight
@@ -1386,6 +1395,8 @@ static void try_sptps(node_t *n) {
 	return;
 }
 
+// This function used by create fec tunnel
+// #TODO send 10 packets at first time.
 static void send_fec_probe_packet(node_t *n, int len) {
 	if (n->status.udp_confirmed == 1)
 	{
@@ -1394,6 +1405,7 @@ static void send_fec_probe_packet(node_t *n, int len) {
 		memset(DATA(&packet), 0, 14);
 		randomize(DATA(&packet) + 14, len - 14);
 		DATA(&packet)[0] = 0x80;
+		DATA(&packet)[1] = 0x0;
 		packet.len = len;
 		packet.priority = 0;
 
@@ -1463,9 +1475,15 @@ static void try_udp(node_t *n) {
 			send_udp_probe_packet(n, MIN_PROBE_SIZE);
 			n->status.send_locally = false;
 		}
+
+		/* Get fec_enable from tinc.conf
+		 * if tinc.conf Fec=true, then enter try fec, added by yanbowen */
+		get_config_string(lookup_config(config_tree, "Fec"), &fec_enable);
 		/* if udp confirmed, then try probe fec, added by dailei */
-		if (n->status.udp_confirmed && n->udp_ping_rtt > 10 * 1000) {
-			send_fec_probe_packet(n, MIN_PROBE_SIZE);
+		if (strcmp(fec_enable, "true") == 0) {
+			if (n->status.udp_confirmed && n->udp_ping_rtt > 10 * 1000) {
+				send_fec_probe_packet(n, MIN_PROBE_SIZE);
+			}
 		}
 	}
 }
