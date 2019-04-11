@@ -2906,7 +2906,7 @@ static int cmd_shell(int argc, char *argv[]) {
 	return result;
 }
 
-void deamon_init()
+void daemon_init()
 {
     pid_t pid;
     pid = fork();
@@ -2922,7 +2922,7 @@ void deamon_init()
 }
 
 int main(int argc, char *argv[]) {
-	deamon_init();
+	daemon_init();
 
 	program_name = argv[0];
 	orig_argv = argv;
