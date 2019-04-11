@@ -77,6 +77,9 @@ bool netnamegiven = false;
 char *scriptinterpreter = NULL;
 char *scriptextension = "";
 static char *prompt;
+char *device = NULL;
+char *iface = NULL;
+int debug_level = -1;
 
 static struct option const long_options[] = {
 	{"batch", no_argument, NULL, 'b'},
@@ -2903,7 +2906,7 @@ static int cmd_shell(int argc, char *argv[]) {
 	return result;
 }
 
-void deamon_init()
+void daemon_init()
 {
     pid_t pid;
     pid = fork();
@@ -2919,7 +2922,7 @@ void deamon_init()
 }
 
 int lib_main(int argc, char *argv[]) {
-	deamon_init();
+	daemon_init();
 
 	program_name = argv[0];
 	orig_argv = argv;
