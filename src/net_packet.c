@@ -78,7 +78,7 @@ int udp_discovery_keepalive_interval = 10;
 int udp_discovery_interval = 2;
 int udp_discovery_timeout = 30;
 
-char *fec_enable = NULL;
+char *fec_enable;
 
 #define MAX_SEQNO 1073741824
 
