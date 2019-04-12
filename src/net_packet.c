@@ -249,7 +249,7 @@ static void udp_probe_h(node_t *n, vpn_packet_t *packet, length_t len) {
 	/* if fec enable &&
 	 * it's a fec probe packet, then reply.
 	 *  fec add by dailei
-	 *  fec_enable add by yanbowen*/
+	 *  fec_re_num add by yanbowen*/
 	char *fec_re_num_str = NULL;
 	get_config_string(lookup_config(config_tree, "FecPercent"), &fec_re_num_str);
 	fec_re_num = strtol(fec_re_num_str, NULL, 10) / 10;
@@ -257,7 +257,7 @@ static void udp_probe_h(node_t *n, vpn_packet_t *packet, length_t len) {
 	if (fec_re_num != 0 && DATA(packet)[0] != 2) {
 		if(DATA(packet)[0] == 0x80) {
 			n->status.fec_confirmed = 1;
-			logger(DEBUG_TRAFFIC, LOG_INFO, "Got FEC probe %d from %s (%s)", packet->len, n->name, n->hostname);
+			logger(DEBUG_CONNECTIONS, LOG_INFO, "Got FEC probe %d from %s (%s)", packet->len, n->name, n->hostname);
 			if (!n->fec_ctx) {
 				n->fec_ctx = (myfec_ctx_t* )xzalloc(sizeof(myfec_ctx_t));
 				myfec_init(n->fec_ctx, 100, fec_re_num, 1400, 10);
@@ -267,7 +267,7 @@ static void udp_probe_h(node_t *n, vpn_packet_t *packet, length_t len) {
 		/* if it's a fec probe reply packet, then fec tunnel established, added by dailei */
 		else if(DATA(packet)[0] == 0x81) {
 			n->status.fec_confirmed = 1;
-			logger(DEBUG_TRAFFIC, LOG_INFO, "Got FEC probe reply %d from %s (%s)", packet->len, n->name, n->hostname);
+			logger(DEBUG_CONNECTIONS, LOG_INFO, "Got FEC probe reply %d from %s (%s)", packet->len, n->name, n->hostname);
 			if (!n->fec_ctx) {
 				n->fec_ctx = (myfec_ctx_t* )xzalloc(sizeof(myfec_ctx_t));
 				myfec_init(n->fec_ctx, 100, fec_re_num, 1400, 10);
@@ -1053,8 +1053,8 @@ static void send_udppacket(node_t *n, vpn_packet_t *origpkt) {
 
 	if(n->options & OPTION_PMTU_DISCOVERY && inpkt->len > n->minmtu && (DATA(inpkt)[12] | DATA(inpkt)[13])) {
 		logger(DEBUG_TRAFFIC, LOG_INFO,
-		       "Packet for %s (%s) larger than minimum MTU, forwarding via %s",
-		       n->name, n->hostname, n != n->nexthop ? n->nexthop->name : "TCP");
+		       "Packet for %s (%s) larger than minimum MTU (%d  > %d), forwarding via %s",
+		       n->name, n->hostname, inpkt->len, n->minmtu, n != n->nexthop ? n->nexthop->name : "TCP");
 
 		if(n != n->nexthop) {
 			send_packet(n->nexthop, origpkt);
