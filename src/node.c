@@ -141,7 +141,12 @@ void free_node(node_t *n) {
 			timeout_del(&n->fec_timeout);
 			n->fec_timer_started = 0;
 		}
-
+        if ((n->fec_probe_status == 1) || (n->fec_probe_status == 2))
+        {
+            timeout_del(&n->fec_probe_timeout);
+            n->fec_probe_status = 0;
+            n->fec_loss_probe_recv_num = 0;
+        }
 		if (n->fec_feedback_timer_started == 1)
 		{
 			timeout_del(&n->fec_feedback_timeout);

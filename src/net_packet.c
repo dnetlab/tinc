@@ -71,6 +71,8 @@ static void send_to_fec_only(node_t *n, int sock, sockaddr_t* sa);
 
 static void dump_data_header(unsigned char* data);
 
+static void try_fec(node_t *n);
+
 unsigned replaywin = 32;
 bool localdiscovery = true;
 bool udp_discovery = true;
@@ -84,6 +86,12 @@ static void adapt_socket(const sockaddr_t *sa, int *sock);
 static void choose_udp_address(const node_t *n, const sockaddr_t **sa, int *sock);
 
 static void choose_local_address(const node_t *n, const sockaddr_t **sa, int *sock);
+
+enum FecProbeStatus {
+	FecProbeNever,
+	FecProbeReceiving,
+	FecProbeFinish,
+};
 
 static void try_fix_mtu(node_t *n) {
 	if(n->mtuprobes < 0) {
@@ -104,21 +112,55 @@ static void try_fix_mtu(node_t *n) {
 }
 
 static void udp_probe_timeout_handler(void *data) {
-	node_t *n = data;
+    node_t *n = data;
 
-	if(!n->status.udp_confirmed) {
-		return;
-	}
+    if(!n->status.udp_confirmed) {
+        return;
+    }
 
-	logger(DEBUG_TRAFFIC, LOG_INFO, "Too much time has elapsed since last UDP ping response from %s (%s), stopping UDP communication", n->name, n->hostname);
-	n->status.udp_confirmed = false;
-	n->udp_ping_rtt = -1;
-	n->maxrecentlen = 0;
-	n->mtuprobes = 0;
-	n->minmtu = 0;
-	n->maxmtu = MTU;
+    logger(DEBUG_TRAFFIC, LOG_INFO, "Too much time has elapsed since last UDP ping response from %s (%s), stopping UDP communication", n->name, n->hostname);
+    n->status.udp_confirmed = false;
 }
 
+static void adjust_fec_params(node_t* n, unsigned int lossy) {
+    int x = 0;
+    if (lossy < 2) {
+    	n->fec_ctx->max_fec_x = 0;
+    }
+    else if (2 <= lossy && lossy < 10) {
+        x = 2;
+    }
+    else if (10 <= lossy && lossy < 20) {
+        x = 3;
+    }
+    else if (lossy >= 20) {
+        x = 4;
+    }
+
+    n->fec_ctx->re_num = x;
+}
+
+/* For stop receive FEC probe.
+ * Add by yanbowen */
+static void fec_probe_timeout_handler(void *data) {
+    node_t *n = data;
+
+	if (!n->fec_ctx) {
+		n->fec_ctx = (myfec_ctx_t* )xzalloc(sizeof(myfec_ctx_t));
+		myfec_init(n->fec_ctx, 100, 3, 1400, 10);
+	}
+    unsigned int lossy = (100 - n->fec_loss_probe_recv_num);
+	adjust_fec_params(n, lossy);
+    n->status.fec_confirmed = 1;
+
+    logger(DEBUG_TRAFFIC, LOG_INFO, "Too much time has elapsed since last FEC ping response from %s (%s), stopping FEC communication", n->name, n->hostname);
+    // stop to deal with 0x82 probe package
+    n->fec_probe_status = FecProbeFinish;
+
+
+}
+
+/* Add by dailei */
 static void fec_encode_timeout_handler(void *data) {
 	node_t *n = (node_t* )data;
 	//MY_DEBUG_INFO("timer expired\n");
@@ -148,11 +190,11 @@ static void fec_encode_timeout_handler(void *data) {
 }
 
 static void fec_feedback_timeout_handler(void* data) {
-	int len = 0;
-	node_t *n = (node_t* )data;
-	timeout_del(&n->fec_feedback_timeout);
-	n->fec_feedback_timer_started = 0;
 
+}
+
+// send 100 fec udp package,
+static void send_fec_loss_probe(node_t *n, length_t len) {
 	vpn_packet_t packet;
 	packet.offset = DEFAULT_PACKET_OFFSET;
 	memset(DATA(&packet), 0, 14);
@@ -160,25 +202,17 @@ static void fec_feedback_timeout_handler(void* data) {
 	DATA(&packet)[0] = 0x82;
 	packet.len = MIN_PROBE_SIZE;
 	packet.priority = 0;
-
-	//TBD: unsigned int lossy = myfec_cal_packet_lossy(n->fec_ctx);
-
-	//TBD: *(unsigned int*)(DATA(&packet) + 2) = htonl(lossy);
-
-	//TBD: myfec_reset_packet_lossy(n->fec_ctx);
-
-	logger(DEBUG_TRAFFIC, LOG_INFO, "Sending FEC feedback length %d to %s (%s)", packet.len, n->name, n->hostname);
-
-	send_udppacket(n, &packet);
+    for(int i = 0; i < 100; i++) {
+        if (n->status.udp_confirmed) {
+            send_udppacket(n, &packet);
+        }
+    }
 }
 
 static void send_fec_probe_reply(node_t *n, vpn_packet_t *packet, length_t len) {
 	/* Legacy protocol: n won't understand type 2 probe replies. */
 	DATA(packet)[0] = 0x81;
 	logger(DEBUG_TRAFFIC, LOG_INFO, "Sending fec probe reply length %u to %s (%s)", len, n->name, n->hostname);
-
-	/* Temporarily set udp_confirmed, so that the reply is sent
-	   back exactly the way it came in. */
 
 	if (n->status.udp_confirmed) {
 		send_udppacket(n, packet);
@@ -215,21 +249,6 @@ static void send_udp_probe_reply(node_t *n, vpn_packet_t *packet, length_t len) 
 	n->status.udp_confirmed = udp_confirmed;
 }
 
-static int cal_re_num(int lossy, int x)
-{
-	int ret = 0;
-	if (ret <= 0)
-	{
-		ret = 1;
-	}
-	return ret;
-}
-
-static void adjust_fec_params(node_t* n, unsigned int lossy)
-{
-	int y = cal_re_num(lossy, n->fec_ctx->max_fec_x);
-}
-
 static void udp_probe_h(node_t *n, vpn_packet_t *packet, length_t len) {
 	if(!DATA(packet)[0]) {
 		logger(DEBUG_TRAFFIC, LOG_INFO, "Got UDP probe request %d from %s (%s)", packet->len, n->name, n->hostname);
@@ -244,36 +263,47 @@ static void udp_probe_h(node_t *n, vpn_packet_t *packet, length_t len) {
 		len = ntohs(len16);
 	}
 
-	/* if set fec_re_num &&
-	 * it's a fec probe packet, then reply.
-	 *  fec add by dailei
-	 *  fec_re_num add by yanbowen
-	 *  temp remove fec_re_num
-	 *  TODO: fec_re_num*/
+	/*  fec add by dailei
+	 *  modify by yanbowen
+	 *  recv fec probe 0x80, then send fec probe relay 0x81*/
 	else if(DATA(packet)[0] == 0x80) {
-		n->status.fec_confirmed = 1;
-		logger(DEBUG_CONNECTIONS, LOG_INFO, "Got FEC probe reply %d from %s (%s)", packet->len, n->name, n->hostname);
-		if (!n->fec_ctx) {
-			n->fec_ctx = (myfec_ctx_t* )xzalloc(sizeof(myfec_ctx_t));
-			myfec_init(n->fec_ctx, 100, 3, 1400, 10);
+		// if fec had init, keep n->status.fec_confirmed.
+		if (n->fec_probe_status == FecProbeFinish) {
+			n->status.fec_confirmed = 1;
 		}
+
 		send_fec_probe_reply(n, packet, len);
+		if (!n->fec_probe_status) {
+			send_fec_loss_probe(n, len);
+		}
 	}
 	/* if it's a fec probe reply packet, then fec tunnel established, added by dailei */
 	else if(DATA(packet)[0] == 0x81) {
-		n->status.fec_confirmed = 1;
-		logger(DEBUG_CONNECTIONS, LOG_INFO, "Got FEC probe reply %d from %s (%s)", packet->len, n->name, n->hostname);
-		if (!n->fec_ctx) {
-			n->fec_ctx = (myfec_ctx_t* )xzalloc(sizeof(myfec_ctx_t));
-			myfec_init(n->fec_ctx, 100, 3, 1400, 10);
+		if (n->fec_probe_status == FecProbeFinish) {
+			n->status.fec_confirmed = 1;
+		}
+
+		// if fec loss probe never send, then send it.
+		if (!n->fec_probe_status) {
+			send_fec_loss_probe(n, len);
 		}
 	}
-	else if(DATA(packet)[0] == 0x82) {
-		//TODO: receive a fec feedback packet
-		unsigned int lossy = ntohl(*(unsigned int*)(DATA(packet) + 2));
-		adjust_fec_params(n, lossy);
-	}
 
+	else if(DATA(packet)[0] == 0x82) {
+		// receive a fec loss probe packet
+        if (n->fec_probe_status == FecProbeNever) {
+        	n->fec_probe_status = FecProbeReceiving;
+        	n->fec_loss_probe_recv_num = 1;
+
+            struct timeval tv;
+            tv.tv_sec = 4;
+            tv.tv_usec = 0;
+            timeout_add(&n->fec_probe_timeout, fec_probe_timeout_handler, n, &tv);
+        }
+        else if (n->fec_probe_status == FecProbeReceiving) {
+        	n->fec_loss_probe_recv_num += 1;
+        }
+	}
 
 	if(n->status.ping_sent) {  // a probe in flight
 		gettimeofday(&now, NULL);
@@ -1473,23 +1503,18 @@ static void try_udp(node_t *n) {
 			send_udp_probe_packet(n, MIN_PROBE_SIZE);
 			n->status.send_locally = false;
 		}
-
-		/* Get fec_enable from tinc.conf
-		 * if tinc.conf Fec=true, then enter try fec, added by yanbowen
-		 *
-		 * TODO
-		char *fec_re_num_str = NULL;
-		get_config_string(lookup_config(config_tree, "FecPercent"), &fec_re_num_str);
-		fec_re_num = strtol(fec_re_num_str, NULL, 10) / 10;
-		free(fec_re_num_str);
-		 */
-		/* if udp confirmed, then try probe fec, added by dailei */
-		//if (fec_re_num != 0) {
-		if (n->status.udp_confirmed && n->udp_ping_rtt > 10 * 1000) {
-			send_fec_probe_packet(n, MIN_PROBE_SIZE);
-		}
-		//}
+		// Modify by yanbowen
+        try_fec(n);
 	}
+}
+
+/* if udp confirmed, then try probe fec,
+ * added by dailei
+ * Modify by yanbowen*/
+static void try_fec(node_t *n) {
+    if (n->status.udp_confirmed && n->udp_ping_rtt > 10 * 1000) {
+        send_fec_probe_packet(n, MIN_PROBE_SIZE);
+    }
 }
 
 static length_t choose_initial_maxmtu(node_t *n) {

@@ -134,6 +134,13 @@ typedef struct node_t {
 	timeout_t    fec_timeout;               /* FEC send buffer timeout event */
 	int          fec_timer_started;         /* FEC timer started flag */
 
+    timeout_t    fec_probe_timeout;         /* FEC recv probe timeout event */
+	int          fec_loss_probe_recv_num;   /* FEC Number of not lost packets per 100 */
+    int          fec_probe_status;          /* FEC probe status
+                                             * 0 fec loss probe not start
+                                             * 1 fec loss probe receiving
+                                             * 2 fec loss probe recv finish */
+
 	timeout_t    fec_feedback_timeout;
 	int          fec_feedback_timer_started;         /* FEC timer started flag */
 } node_t;
