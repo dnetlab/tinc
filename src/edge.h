@@ -34,12 +34,13 @@ typedef struct edge_t {
 
 	uint32_t options;                       /* options turned on for this edge */
 	int weight;                             /* weight of this edge */
+	int seqloss;                        /* Sequence loss of the edge, reset upon seqno >= MAX_SEQNO */
 
 	struct connection_t *connection;        /* connection associated with this edge, if available */
 	struct edge_t *reverse;                 /* edge in the opposite direction, if available */
 } edge_t;
 
-extern splay_tree_t *edge_weight_tree;          /* Tree with all known edges sorted on weight */
+extern splay_tree_t *edge_weight_tree;      /* Tree with all known edges sorted on weight */
 
 extern void init_edges(void);
 extern void exit_edges(void);
