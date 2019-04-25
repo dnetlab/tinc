@@ -1,3 +1,4 @@
+
 #ifndef TINC_VERSION_H
 #define TINC_VERSION_H
 
