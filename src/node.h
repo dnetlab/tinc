@@ -45,9 +45,22 @@ typedef struct node_status_t {
 	unsigned int validkey_in: 1;            /* 1 if we have sent a valid key to him */
 	unsigned int has_address: 1;            /* 1 if we know an external address for this node */
 	unsigned int ping_sent:1;               /* 1 if we sent a UDP probe but haven't received the reply yet */
+	unsigned int fec_other_side: 1;         /* 1 if we other side allowed fec tunnel */
 	unsigned int fec_confirmed: 1;          /* 1 if we establish a fec tunnel */
-	unsigned int unused: 18;
+	unsigned int fec_loss_init: 1;			/* 1 if we had to initialize fec loss */
+	unsigned int fec_loss_timeout_init: 1;	/* 1 if we had to initialize fec loss timeout */
+	unsigned int fec_loss_other_side_standby: 1;	/* 1 if we had to initialize fec loss timeout */
+	unsigned int fec_loss_probe_82: 1;				/* 1 if we send 100 fec probe package */
+	unsigned int fec_loss_probe_83: 1;				/* 1 if we send 100 fec probe package */
+	unsigned int unused: 11;
 } node_status_t;
+
+typedef struct cur_loss_t {
+	uint32_t 	 start_seqno;			/* FEC seqno when timeout start */
+	uint32_t 	 total_loss_package;	/* FEC how much package loss in this period */
+	int 	 	 loss_rate;				/* FEC udp average loss rate*/
+} fec_loss_t;
+
 
 typedef struct node_t {
 	char *name;                             /* name of this node */
@@ -134,15 +147,11 @@ typedef struct node_t {
 	timeout_t    fec_timeout;               /* FEC send buffer timeout event */
 	int          fec_timer_started;         /* FEC timer started flag */
 
-    timeout_t    fec_probe_timeout;         /* FEC recv probe timeout event */
-	int          fec_loss_probe_recv_num;   /* FEC Number of not lost packets per 100 */
-    int          fec_probe_status;          /* FEC probe status
-                                             * 0 fec loss probe not start
-                                             * 1 fec loss probe receiving
-                                             * 2 fec loss probe recv finish */
+    myfec_ctx_t* fec_recv_ctx;				/* fec recv ctx*/
 
-	timeout_t    fec_feedback_timeout;
-	int          fec_feedback_timer_started;         /* FEC timer started flag */
+	struct cur_loss_t *cur_loss;
+	timeout_t    loss_timeout;         		/* calculate loss timeout event */
+
 } node_t;
 
 extern struct node_t *myself;

@@ -73,6 +73,10 @@ static void dump_data_header(unsigned char* data);
 
 static void try_fec(node_t *n);
 
+static void cur_loss_start(node_t *n);
+
+static void send_fec_loss_probe(node_t *n, length_t len, int num);
+
 unsigned replaywin = 32;
 bool localdiscovery = true;
 bool udp_discovery = true;
@@ -86,12 +90,6 @@ static void adapt_socket(const sockaddr_t *sa, int *sock);
 static void choose_udp_address(const node_t *n, const sockaddr_t **sa, int *sock);
 
 static void choose_local_address(const node_t *n, const sockaddr_t **sa, int *sock);
-
-enum FecProbeStatus {
-	FecProbeNever,
-	FecProbeReceiving,
-	FecProbeFinish,
-};
 
 static void try_fix_mtu(node_t *n) {
 	if(n->mtuprobes < 0) {
@@ -122,42 +120,104 @@ static void udp_probe_timeout_handler(void *data) {
     n->status.udp_confirmed = false;
 }
 
-static void adjust_fec_params(node_t* n, unsigned int lossy) {
+static int fec_loss_to_re_num(node_t* n) {
+	int loss = n->cur_loss->loss_rate;
     int x = 0;
-    if (lossy < 2) {
-    	n->fec_ctx->max_fec_x = 0;
-    }
-    else if (2 <= lossy && lossy < 10) {
+    if (1 <= loss && loss < 10) {
         x = 2;
     }
-    else if (10 <= lossy && lossy < 20) {
+    else if (10 <= loss && loss < 20) {
         x = 3;
     }
-    else if (lossy >= 20) {
+    else if (loss >= 20) {
         x = 4;
     }
-
-    n->fec_ctx->re_num = x;
+    return x;
 }
 
-/* For stop receive FEC probe.
- * Add by yanbowen */
-static void fec_probe_timeout_handler(void *data) {
-    node_t *n = data;
+/* if fec init, exit
+ * then if (re_num != 0) init fec*/
+static void fec_adjust(node_t* n) {
+	int re_num = fec_loss_to_re_num(n);
+	if (n->status.fec_other_side) {
+		if (n->fec_ctx) {
+			if (re_num == 0) {
+				logger(DEBUG_STATUS, LOG_INFO,
+						"To %s (%s) Loss rate < 2% close fec.\n",
+						n->name, n->hostname);
 
-	if (!n->fec_ctx) {
-		n->fec_ctx = (myfec_ctx_t* )xzalloc(sizeof(myfec_ctx_t));
-		myfec_init(n->fec_ctx, 100, 3, 1400, 10);
+				n->status.fec_confirmed = 0;
+				myfec_exit(n->fec_ctx);
+			}
+			else {
+				myfec_set_re_num(n->fec_ctx, re_num);
+				n->status.fec_confirmed = 1;
+			}
+		}
+		// if fec never init
+		// 	  and loss >= 1%   start send package fec.
+		else if (n->cur_loss->loss_rate >= 1) {
+			logger(DEBUG_STATUS, LOG_INFO,
+					"To %s (%s) Start user fec.\n", n->name, n->hostname);
+
+			n->fec_ctx = (myfec_ctx_t* )xzalloc(sizeof(myfec_ctx_t));
+			myfec_init(n->fec_ctx, 100, re_num, 1400, 10);
+			n->status.fec_confirmed = 1;
+		}
 	}
-    unsigned int lossy = (100 - n->fec_loss_probe_recv_num);
-	adjust_fec_params(n, lossy);
-    n->status.fec_confirmed = 1;
+}
 
-    logger(DEBUG_TRAFFIC, LOG_INFO, "Too much time has elapsed since last FEC ping response from %s (%s), stopping FEC communication", n->name, n->hostname);
-    // stop to deal with 0x82 probe package
-    n->fec_probe_status = FecProbeFinish;
+/* Added by yanbowen */
+static void cur_loss_timeout_handler(void *data) {
+	node_t *n = data;
+	int total_recv = n->received_seqno - n->cur_loss->start_seqno;
+	if (total_recv < 0) {
+		logger(DEBUG_TRAFFIC, LOG_INFO,
+				"total_recv < 0,reset loss parameter  \n");
+		cur_loss_reset(n);
+	}
+	logger(DEBUG_STATUS, LOG_INFO,
+			"To %s (%s) loss parameter total_recv %d\n",
+			n->name, n->hostname);
 
+	// total receive upd package in a period(5 or 60 sec) > 100
+	if (total_recv > 100) {
+		// calculate loss rate
+		n->cur_loss->loss_rate = n->cur_loss->total_loss_package * 100 / total_recv;
+		logger(DEBUG_STATUS, LOG_INFO, "loss packages %d, loss percent %d   \n",
+				n->cur_loss->total_loss_package,
+				n->cur_loss->loss_rate);
+		fec_adjust(n);
 
+		cur_loss_reset(n);
+	}
+
+	n->status.fec_loss_timeout_init = 0;
+    timeout_del(&n->loss_timeout);
+    cur_loss_start(n);
+}
+
+/* Added by yanbowen */
+static void cur_loss_start(node_t *n) {
+	if (!n->status.fec_loss_timeout_init) {
+		struct timeval tv;
+		tv.tv_sec = 60;
+		tv.tv_usec = 0;
+		if (!n->status.fec_loss_init) {
+			tv.tv_sec = 10;
+			cur_loss_reset(n);
+			n->status.fec_loss_init = 1;
+		}
+
+		timeout_add(&n->loss_timeout, cur_loss_timeout_handler, n, &tv);
+		n->status.fec_loss_timeout_init = 1;
+	}
+}
+
+void cur_loss_reset(node_t *n) {
+	n->cur_loss->total_loss_package = 0;
+	n->cur_loss->loss_rate = 0;
+	n->cur_loss->start_seqno = n->received_seqno;
 }
 
 /* Add by dailei */
@@ -189,24 +249,32 @@ static void fec_encode_timeout_handler(void *data) {
 	}
 }
 
-static void fec_feedback_timeout_handler(void* data) {
-
-}
-
 // send 100 fec udp package,
-static void send_fec_loss_probe(node_t *n, length_t len) {
-	vpn_packet_t packet;
-	packet.offset = DEFAULT_PACKET_OFFSET;
-	memset(DATA(&packet), 0, 14);
-	randomize(DATA(&packet) + 14, len - 14);
-	DATA(&packet)[0] = 0x82;
-	packet.len = MIN_PROBE_SIZE;
-	packet.priority = 0;
-    for(int i = 0; i < 100; i++) {
-        if (n->status.udp_confirmed) {
-            send_udppacket(n, &packet);
-        }
-    }
+static void send_fec_loss_probe(node_t *n, length_t len, int type) {
+	if (n->status.udp_confirmed) {
+		int num = 1;
+		vpn_packet_t packet;
+		packet.offset = DEFAULT_PACKET_OFFSET;
+		memset(DATA(&packet), 0, 14);
+		randomize(DATA(&packet) + 14, len - 14);
+		if (type == 80) {
+			DATA(&packet)[0] = 0x80;
+//			num = 1;
+		}
+		else if (type == 82) {
+			DATA(&packet)[0] = 0x82;
+			num = 10;
+		}
+		else if (type == 83) {
+			DATA(&packet)[0] = 0x83;
+			num = 100;
+		}
+		packet.len = MIN_PROBE_SIZE;
+		packet.priority = 0;
+		for(int i = 0; i < num; i++) {
+			send_udppacket(n, &packet);
+		}
+	}
 }
 
 static void send_fec_probe_reply(node_t *n, vpn_packet_t *packet, length_t len) {
@@ -267,43 +335,42 @@ static void udp_probe_h(node_t *n, vpn_packet_t *packet, length_t len) {
 	 *  modify by yanbowen
 	 *  recv fec probe 0x80, then send fec probe relay 0x81*/
 	else if(DATA(packet)[0] == 0x80) {
-		// if fec had init, keep n->status.fec_confirmed.
-		if (n->fec_probe_status == FecProbeFinish) {
-			n->status.fec_confirmed = 1;
-		}
-
 		send_fec_probe_reply(n, packet, len);
-		if (!n->fec_probe_status) {
-			send_fec_loss_probe(n, len);
+		if (!n->fec_recv_ctx) {
+			n->fec_recv_ctx = (myfec_ctx_t* )xzalloc(sizeof(myfec_ctx_t));
+			// init fec recv args is invalid.
+			myfec_init(n->fec_recv_ctx, 100, 0, 1400, 10);
 		}
 	}
-	/* if it's a fec probe reply packet, then fec tunnel established, added by dailei */
+	/* if it's a fec probe reply packet, then fec tunnel established,
+	 *  added by dailei */
 	else if(DATA(packet)[0] == 0x81) {
-		if (n->fec_probe_status == FecProbeFinish) {
-			n->status.fec_confirmed = 1;
-		}
-
 		// if fec loss probe never send, then send it.
-		if (!n->fec_probe_status) {
-			send_fec_loss_probe(n, len);
+		if (!n->fec_recv_ctx) {
+			n->fec_recv_ctx = (myfec_ctx_t* )xzalloc(sizeof(myfec_ctx_t));
+			// init fec recv args is invalid.
+			myfec_init(n->fec_recv_ctx, 100, 0, 1400, 10);
+		}
+		n->status.fec_other_side = 1;
+
+		cur_loss_start(n);
+		// send 10 packages, type 0x82 if never send.
+		if (!n->status.fec_loss_probe_82) {
+			send_fec_loss_probe(n, MIN_PROBE_SIZE, 82);
+			n->status.fec_loss_probe_82 = 1;
 		}
 	}
-
+	/* This kind of package means other side is on standby,
+	 * waiting for receive loss probe.
+	 * added by yanbowen*/
 	else if(DATA(packet)[0] == 0x82) {
-		// receive a fec loss probe packet
-        if (n->fec_probe_status == FecProbeNever) {
-        	n->fec_probe_status = FecProbeReceiving;
-        	n->fec_loss_probe_recv_num = 1;
+		if (!n->status.fec_loss_probe_83) {
+			n->status.fec_loss_probe_83 = 1;
 
-            struct timeval tv;
-            tv.tv_sec = 4;
-            tv.tv_usec = 0;
-            timeout_add(&n->fec_probe_timeout, fec_probe_timeout_handler, n, &tv);
-        }
-        else if (n->fec_probe_status == FecProbeReceiving) {
-        	n->fec_loss_probe_recv_num += 1;
-        }
+			send_fec_loss_probe(n, MIN_PROBE_SIZE, 83);
+		}
 	}
+	else if(DATA(packet)[0] == 0x83) {}
 
 	if(n->status.ping_sent) {  // a probe in flight
 		gettimeofday(&now, NULL);
@@ -453,16 +520,20 @@ static void receive_packet(node_t *n, vpn_packet_t *packet) {
 static void receive_fec_packet(node_t *n, vpn_packet_t *packet) {
 	logger(DEBUG_TRAFFIC, LOG_DEBUG, "Received FEC packet len = %d", packet->len);
 	//dump_data_header(DATA(packet) + 14);
-	logger(DEBUG_TRAFFIC, LOG_DEBUG, "FEC ctx = %p", n->fec_ctx);
-	int dec_ret = myfec_decode(n->fec_ctx, DATA(packet) + 14, packet->len - packet->offset - 14);
+	logger(DEBUG_TRAFFIC, LOG_DEBUG, "FEC ctx = %p", n->fec_recv_ctx);
+	if (!n->fec_recv_ctx) {
+		n->fec_ctx = (myfec_ctx_t* )xzalloc(sizeof(myfec_ctx_t));
+		myfec_init(n->fec_recv_ctx, 100, 0, 1400, 10);
+	}
+	int dec_ret = myfec_decode(n->fec_recv_ctx, DATA(packet) + 14, packet->len - packet->offset - 14);
 	logger(DEBUG_TRAFFIC, LOG_DEBUG, "Received FEC packet decode ret = %d", dec_ret);
 	if (dec_ret == 1)
 	{
 		int i;
-		for(i = 0; i < n->fec_ctx->de_cnt; i++)
+		for(i = 0; i < n->fec_recv_ctx->de_cnt; i++)
 		{
-			int tun_len = n->fec_ctx->de_buf[i].buf_len;
-			char* tun_data = n->fec_ctx->de_buf[i].buf_ptr;
+			int tun_len = n->fec_recv_ctx->de_buf[i].buf_len;
+			char* tun_data = n->fec_recv_ctx->de_buf[i].buf_ptr;
 			vpn_packet_t fec_pkt;
 			fec_pkt.offset = DEFAULT_PACKET_OFFSET;
 			fec_pkt.len = tun_len;
@@ -595,6 +666,11 @@ static bool receive_udppacket(node_t *n, vpn_packet_t *inpkt) {
 
 	if(replaywin) {
 		if(seqno != n->received_seqno + 1) {
+			// Calculate packet loss
+			// added by yanbowen
+			if (n->status.fec_loss_timeout_init) {
+				n->cur_loss->total_loss_package += seqno - (n->received_seqno + 1);
+			}
 			if(seqno >= n->received_seqno + replaywin * 8) {
 				if(n->farfuture++ < replaywin >> 2) {
 					logger(DEBUG_TRAFFIC, LOG_WARNING, "Packet from %s (%s) is %d seqs in the future, dropped (%u)",
@@ -1012,15 +1088,6 @@ static void send_to_fec(node_t *n, vpn_packet_t *inpkt, int sock, sockaddr_t* sa
 			n->fec_timer_started = 1;
 		}
 	}
-
-	if (n->fec_feedback_timer_started == 0)
-	{
-		struct timeval tv;
-		tv.tv_sec = 10;
-		tv.tv_usec = 0;
-		timeout_add(&n->fec_feedback_timeout, fec_feedback_timeout_handler, n, &tv);
-		n->fec_feedback_timer_started = 1;
-	}
 }
 
 static void send_fecpacket(node_t *n, vpn_packet_t *origpkt)
@@ -1424,7 +1491,6 @@ static void try_sptps(node_t *n) {
 }
 
 // This function used by create fec tunnel
-// #TODO send 10 packets at first time.
 static void send_fec_probe_packet(node_t *n, int len) {
 	if (n->status.udp_confirmed == 1)
 	{
@@ -1512,7 +1578,9 @@ static void try_udp(node_t *n) {
  * added by dailei
  * Modify by yanbowen*/
 static void try_fec(node_t *n) {
-    if (n->status.udp_confirmed && n->udp_ping_rtt > 10 * 1000) {
+    if (n->status.udp_confirmed
+    		&& n->udp_ping_rtt > 10 * 1000
+			&& n->status.fec_confirmed == 0) {
         send_fec_probe_packet(n, MIN_PROBE_SIZE);
     }
 }

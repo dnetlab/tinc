@@ -103,6 +103,9 @@ node_t *new_node(void) {
 	struct timeval traffic_time = {TRAFFIC_TIMEOUT_SEC, 0};
 	timeout_add(&n->traffic_timeout, &node_traffic_handler, n, &traffic_time);
 
+	/* add by yanbowen */
+	n->cur_loss = (struct cur_loss_t* )xzalloc(sizeof(struct cur_loss_t));
+
 	return n;
 }
 
@@ -133,6 +136,26 @@ void free_node(node_t *n) {
 	free(n->hostname);
 	free(n->name);
 	free(n->late);
+	if (n->status.fec_loss_init) {
+        if (n->cur_loss)
+        {
+            timeout_del(&n->cur_loss);
+            n->cur_loss->start_seqno = 0;
+            n->cur_loss->total_loss_package = 0;
+            n->cur_loss->loss_rate = 0;
+        }
+        n->status.fec_loss_init = 0;
+		n->status.fec_loss_timeout_init = 0;
+		n->status.fec_loss_other_side_standby = 0;
+		n->status.fec_loss_probe_82 = 0;
+		n->status.fec_loss_probe_83 = 0;
+	}
+
+	n->status.fec_other_side = 0;
+	if (n->status.fec_loss_timeout_init) {
+		timeout_del(&n->loss_timeout);
+	}
+
 	/* The fec ctx need freed */
 	if (n->fec_ctx)
 	{
@@ -141,21 +164,16 @@ void free_node(node_t *n) {
 			timeout_del(&n->fec_timeout);
 			n->fec_timer_started = 0;
 		}
-        if ((n->fec_probe_status == 1) || (n->fec_probe_status == 2))
-        {
-            timeout_del(&n->fec_probe_timeout);
-            n->fec_probe_status = 0;
-            n->fec_loss_probe_recv_num = 0;
-        }
-		if (n->fec_feedback_timer_started == 1)
-		{
-			timeout_del(&n->fec_feedback_timeout);
-			n->fec_feedback_timer_started = 0;
-		}
+        n->status.fec_confirmed = 0;
 		myfec_exit(n->fec_ctx);
 		free(n->fec_ctx);
 		n->fec_ctx = NULL;
 	}
+	if (n->fec_recv_ctx) {
+		free(n->fec_recv_ctx);
+		n->fec_recv_ctx = NULL;
+	}
+//	n->fec_loss_probe = 0;
 
 	if(n->address_cache) {
 		close_address_cache(n->address_cache);
