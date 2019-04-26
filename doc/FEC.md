@@ -4,8 +4,8 @@
 - [x] compitable with existing version 1.1
 - [x] adding FEC enconding and deconding to net_packet.c
 - [x] 4ms wait or xxx buf limit to trigger the FEC encoding and sent 
-- [ ] 如果延时小于10ms (过去10秒的平均值，每隔 10分钟测量一次），不使用FEC
-- [ ] 使用FEC时，测量丢包率（过去10秒的rolling average），发包冗余 = 丢包率 x 1.1 with minimal 5%, max 30% and Delta each change less than 20%
+- [x] 如果延时小于10ms (过去10秒的平均值，每隔 10分钟测量一次），不使用FEC
+- [x] 使用FEC时，测量丢包率（过去10秒的rolling average），发包冗余 = 20%(2 <= 丢包率 <= 10 ) 30%(10 <= 丢包率 <= 20 ) 40%(20 <= 丢包率) 
 
 ## Configuration Variables
 
