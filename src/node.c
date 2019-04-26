@@ -104,7 +104,7 @@ node_t *new_node(void) {
 	timeout_add(&n->traffic_timeout, &node_traffic_handler, n, &traffic_time);
 
 	/* add by yanbowen */
-	n->cur_loss = (struct cur_loss_t* )xzalloc(sizeof(struct cur_loss_t));
+	n->loss = (struct loss_t* )xzalloc(sizeof(struct loss_t));
 
 	return n;
 }
@@ -136,23 +136,23 @@ void free_node(node_t *n) {
 	free(n->hostname);
 	free(n->name);
 	free(n->late);
-	if (n->status.fec_loss_init) {
-        if (n->cur_loss)
+	if (n->status.loss_init) {
+        if (n->loss)
         {
-            timeout_del(&n->cur_loss);
-            n->cur_loss->start_seqno = 0;
-            n->cur_loss->total_loss_package = 0;
-            n->cur_loss->loss_rate = 0;
+            timeout_del(&n->loss);
+            n->loss->start_seqno = 0;
+            n->loss->total_loss_package = 0;
+            n->loss->loss_rate = 0;
         }
-        n->status.fec_loss_init = 0;
-		n->status.fec_loss_timeout_init = 0;
-		n->status.fec_loss_other_side_standby = 0;
-		n->status.fec_loss_probe_82 = 0;
-		n->status.fec_loss_probe_83 = 0;
+        n->status.loss_init = 0;
+		n->status.loss_timeout_init = 0;
+		n->status.loss_other_side_standby = 0;
+		n->status.loss_probe_82 = 0;
+		n->status.loss_probe_83 = 0;
 	}
 
 	n->status.fec_other_side = 0;
-	if (n->status.fec_loss_timeout_init) {
+	if (n->status.loss_timeout_init) {
 		timeout_del(&n->loss_timeout);
 	}
 
@@ -173,7 +173,7 @@ void free_node(node_t *n) {
 		free(n->fec_recv_ctx);
 		n->fec_recv_ctx = NULL;
 	}
-//	n->fec_loss_probe = 0;
+//	n->loss_probe = 0;
 
 	if(n->address_cache) {
 		close_address_cache(n->address_cache);

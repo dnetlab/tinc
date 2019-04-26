@@ -73,9 +73,9 @@ static void dump_data_header(unsigned char* data);
 
 static void try_fec(node_t *n);
 
-static void cur_loss_start(node_t *n);
+static void loss_start(node_t *n);
 
-static void send_fec_loss_probe(node_t *n, length_t len, int num);
+static void send_loss_probe(node_t *n, length_t len, int num);
 
 unsigned replaywin = 32;
 bool localdiscovery = true;
@@ -120,8 +120,8 @@ static void udp_probe_timeout_handler(void *data) {
     n->status.udp_confirmed = false;
 }
 
-static int fec_loss_to_re_num(node_t* n) {
-	int loss = n->cur_loss->loss_rate;
+static int loss_to_re_num(node_t* n) {
+	int loss = n->loss->loss_rate;
     int x = 0;
     if (1 <= loss && loss < 10) {
         x = 2;
@@ -138,7 +138,7 @@ static int fec_loss_to_re_num(node_t* n) {
 /* if fec init, exit
  * then if (re_num != 0) init fec*/
 static void fec_adjust(node_t* n) {
-	int re_num = fec_loss_to_re_num(n);
+	int re_num = loss_to_re_num(n);
 	if (n->status.fec_other_side) {
 		if (n->fec_ctx) {
 			if (re_num == 0) {
@@ -156,7 +156,7 @@ static void fec_adjust(node_t* n) {
 		}
 		// if fec never init
 		// 	  and loss >= 1%   start send package fec.
-		else if (n->cur_loss->loss_rate >= 1) {
+		else if (n->loss->loss_rate >= 1) {
 			logger(DEBUG_STATUS, LOG_INFO,
 					"To %s (%s) Start user fec.\n", n->name, n->hostname);
 
@@ -164,60 +164,75 @@ static void fec_adjust(node_t* n) {
 			myfec_init(n->fec_ctx, 100, re_num, 1400, 10);
 			n->status.fec_confirmed = 1;
 		}
+		loss_reset(n);
 	}
 }
 
-/* Added by yanbowen */
-static void cur_loss_timeout_handler(void *data) {
-	node_t *n = data;
-	int total_recv = n->received_seqno - n->cur_loss->start_seqno;
+static void loss_calculate(node_t* n) {
+	int total_recv = n->received_seqno - n->loss->start_seqno;
 	if (total_recv < 0) {
 		logger(DEBUG_TRAFFIC, LOG_INFO,
-				"total_recv < 0,reset loss parameter  \n");
-		cur_loss_reset(n);
+				"%s (%s) loss. total_recv < 0,reset loss parameter  \n"
+				, n->name, n->hostname);
+		loss_reset(n);
 	}
+
 	logger(DEBUG_STATUS, LOG_INFO,
 			"To %s (%s) loss parameter total_recv %d\n",
-			n->name, n->hostname);
-
-	// total receive upd package in a period(5 or 60 sec) > 100
-	if (total_recv > 100) {
+			n->name, n->hostname, total_recv);
+	if (total_recv >= 100) {
 		// calculate loss rate
-		n->cur_loss->loss_rate = n->cur_loss->total_loss_package * 100 / total_recv;
-		logger(DEBUG_STATUS, LOG_INFO, "loss packages %d, loss percent %d   \n",
-				n->cur_loss->total_loss_package,
-				n->cur_loss->loss_rate);
+		n->loss->loss_rate = n->loss->total_loss_package * 100 / total_recv;
+		logger(DEBUG_TRAFFIC, LOG_INFO, "loss packages %d, loss percent %d   \n",
+				n->loss->total_loss_package,
+				n->loss->loss_rate);
 		fec_adjust(n);
-
-		cur_loss_reset(n);
 	}
+}
 
-	n->status.fec_loss_timeout_init = 0;
-    timeout_del(&n->loss_timeout);
-    cur_loss_start(n);
+static void loss_num_handler(node_t *n) {
+	n->status.loss_modify = 1;
+	loss_calculate(n);
 }
 
 /* Added by yanbowen */
-static void cur_loss_start(node_t *n) {
-	if (!n->status.fec_loss_timeout_init) {
+static void loss_timeout_handler(void *data) {
+	node_t *n = data;
+	if (!n->status.loss_modify) {
+		n->status.loss_modify = 1;
+		loss_calculate(n);
+	}
+
+	n->status.loss_timeout_init = 0;
+
+    timeout_del(&n->loss_timeout);
+    loss_start(n);
+}
+
+/* Added by yanbowen */
+static void loss_start(node_t *n) {
+	if (!n->status.loss_timeout_init) {
 		struct timeval tv;
-		tv.tv_sec = 60;
+		tv.tv_sec = 10;
 		tv.tv_usec = 0;
-		if (!n->status.fec_loss_init) {
-			tv.tv_sec = 10;
-			cur_loss_reset(n);
-			n->status.fec_loss_init = 1;
+		if (!n->status.loss_init) {
+			tv.tv_sec = 3;
+			loss_reset(n);
+			n->status.loss_init = 1;
 		}
 
-		timeout_add(&n->loss_timeout, cur_loss_timeout_handler, n, &tv);
-		n->status.fec_loss_timeout_init = 1;
+		logger(DEBUG_CONNECTIONS, LOG_WARNING, "new timeout \n");
+
+		timeout_add(&n->loss_timeout, loss_timeout_handler, n, &tv);
+		n->status.loss_modify = 0;
+		n->status.loss_timeout_init = 1;
 	}
 }
 
-void cur_loss_reset(node_t *n) {
-	n->cur_loss->total_loss_package = 0;
-	n->cur_loss->loss_rate = 0;
-	n->cur_loss->start_seqno = n->received_seqno;
+void loss_reset(node_t *n) {
+	n->loss->total_loss_package = 0;
+	n->loss->loss_rate = 0;
+	n->loss->start_seqno = n->received_seqno;
 }
 
 /* Add by dailei */
@@ -250,7 +265,7 @@ static void fec_encode_timeout_handler(void *data) {
 }
 
 // send 100 fec udp package,
-static void send_fec_loss_probe(node_t *n, length_t len, int type) {
+static void send_loss_probe(node_t *n, length_t len, int type) {
 	if (n->status.udp_confirmed) {
 		int num = 1;
 		vpn_packet_t packet;
@@ -339,7 +354,7 @@ static void udp_probe_h(node_t *n, vpn_packet_t *packet, length_t len) {
 		if (!n->fec_recv_ctx) {
 			n->fec_recv_ctx = (myfec_ctx_t* )xzalloc(sizeof(myfec_ctx_t));
 			// init fec recv args is invalid.
-			myfec_init(n->fec_recv_ctx, 100, 0, 1400, 10);
+			myfec_init(n->fec_recv_ctx, 100, 1, 1400, 10);
 		}
 	}
 	/* if it's a fec probe reply packet, then fec tunnel established,
@@ -349,25 +364,25 @@ static void udp_probe_h(node_t *n, vpn_packet_t *packet, length_t len) {
 		if (!n->fec_recv_ctx) {
 			n->fec_recv_ctx = (myfec_ctx_t* )xzalloc(sizeof(myfec_ctx_t));
 			// init fec recv args is invalid.
-			myfec_init(n->fec_recv_ctx, 100, 0, 1400, 10);
+			myfec_init(n->fec_recv_ctx, 100, 1, 1400, 10);
 		}
 		n->status.fec_other_side = 1;
 
-		cur_loss_start(n);
+		loss_start(n);
 		// send 10 packages, type 0x82 if never send.
-		if (!n->status.fec_loss_probe_82) {
-			send_fec_loss_probe(n, MIN_PROBE_SIZE, 82);
-			n->status.fec_loss_probe_82 = 1;
+		if (!n->status.loss_probe_82) {
+			send_loss_probe(n, MIN_PROBE_SIZE, 82);
+			n->status.loss_probe_82 = 1;
 		}
 	}
 	/* This kind of package means other side is on standby,
 	 * waiting for receive loss probe.
 	 * added by yanbowen*/
 	else if(DATA(packet)[0] == 0x82) {
-		if (!n->status.fec_loss_probe_83) {
-			n->status.fec_loss_probe_83 = 1;
+		if (!n->status.loss_probe_83) {
+			n->status.loss_probe_83 = 1;
 
-			send_fec_loss_probe(n, MIN_PROBE_SIZE, 83);
+			send_loss_probe(n, MIN_PROBE_SIZE, 83);
 		}
 	}
 	else if(DATA(packet)[0] == 0x83) {}
@@ -523,7 +538,7 @@ static void receive_fec_packet(node_t *n, vpn_packet_t *packet) {
 	logger(DEBUG_TRAFFIC, LOG_DEBUG, "FEC ctx = %p", n->fec_recv_ctx);
 	if (!n->fec_recv_ctx) {
 		n->fec_ctx = (myfec_ctx_t* )xzalloc(sizeof(myfec_ctx_t));
-		myfec_init(n->fec_recv_ctx, 100, 0, 1400, 10);
+		myfec_init(n->fec_recv_ctx, 100, 1, 1400, 10);
 	}
 	int dec_ret = myfec_decode(n->fec_recv_ctx, DATA(packet) + 14, packet->len - packet->offset - 14);
 	logger(DEBUG_TRAFFIC, LOG_DEBUG, "Received FEC packet decode ret = %d", dec_ret);
@@ -664,12 +679,20 @@ static bool receive_udppacket(node_t *n, vpn_packet_t *inpkt) {
 	seqno = ntohl(seqno);
 	inpkt->len -= sizeof(seqno);
 
+	if (n->status.loss_timeout_init) {
+		if (n->received_seqno - n->loss->start_seqno >= 100) {
+			if (!n->status.loss_modify) {
+				loss_num_handler(n);
+			}
+		}
+	}
+
 	if(replaywin) {
 		if(seqno != n->received_seqno + 1) {
 			// Calculate packet loss
 			// added by yanbowen
-			if (n->status.fec_loss_timeout_init) {
-				n->cur_loss->total_loss_package += seqno - (n->received_seqno + 1);
+			if (n->status.loss_timeout_init) {
+				n->loss->total_loss_package += seqno - (n->received_seqno + 1);
 			}
 			if(seqno >= n->received_seqno + replaywin * 8) {
 				if(n->farfuture++ < replaywin >> 2) {

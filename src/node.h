@@ -47,19 +47,20 @@ typedef struct node_status_t {
 	unsigned int ping_sent:1;               /* 1 if we sent a UDP probe but haven't received the reply yet */
 	unsigned int fec_other_side: 1;         /* 1 if we other side allowed fec tunnel */
 	unsigned int fec_confirmed: 1;          /* 1 if we establish a fec tunnel */
-	unsigned int fec_loss_init: 1;			/* 1 if we had to initialize fec loss */
-	unsigned int fec_loss_timeout_init: 1;	/* 1 if we had to initialize fec loss timeout */
-	unsigned int fec_loss_other_side_standby: 1;	/* 1 if we had to initialize fec loss timeout */
-	unsigned int fec_loss_probe_82: 1;				/* 1 if we send 100 fec probe package */
-	unsigned int fec_loss_probe_83: 1;				/* 1 if we send 100 fec probe package */
-	unsigned int unused: 11;
+	unsigned int loss_init: 1;			/* 1 if we had to initialize fec loss */
+	unsigned int loss_timeout_init: 1;	/* 1 if we had to initialize fec loss timeout */
+	unsigned int loss_other_side_standby: 1;	/* 1 if we had to initialize fec loss timeout */
+	unsigned int loss_probe_82: 1;		/* 1 if we send 100 fec probe package */
+	unsigned int loss_probe_83: 1;		/* 1 if we send 100 fec probe package */
+	unsigned int loss_modify: 1;		/* 1 if change re_num start */
+	unsigned int unused: 10;
 } node_status_t;
 
-typedef struct cur_loss_t {
+typedef struct loss_t {
 	uint32_t 	 start_seqno;			/* FEC seqno when timeout start */
 	uint32_t 	 total_loss_package;	/* FEC how much package loss in this period */
 	int 	 	 loss_rate;				/* FEC udp average loss rate*/
-} fec_loss_t;
+} loss_t;
 
 
 typedef struct node_t {
@@ -149,9 +150,8 @@ typedef struct node_t {
 
     myfec_ctx_t* fec_recv_ctx;				/* fec recv ctx*/
 
-	struct cur_loss_t *cur_loss;
-	timeout_t    loss_timeout;         		/* calculate loss timeout event */
-
+	struct loss_t *loss;
+	timeout_t     loss_timeout;         	/* calculate loss timeout event */
 } node_t;
 
 extern struct node_t *myself;
