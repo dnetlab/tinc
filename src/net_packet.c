@@ -73,6 +73,8 @@ static void dump_data_header(unsigned char* data);
 
 static void try_fec(node_t *n);
 
+static void loss_reset(node_t *n);
+
 static void loss_start(node_t *n);
 
 static void send_loss_probe(node_t *n, length_t len, int num);
@@ -229,7 +231,7 @@ static void loss_start(node_t *n) {
 	}
 }
 
-void loss_reset(node_t *n) {
+static void loss_reset(node_t *n) {
 	n->loss->total_loss_package = 0;
 	n->loss->loss_rate = 0;
 	n->loss->start_seqno = n->received_seqno;
