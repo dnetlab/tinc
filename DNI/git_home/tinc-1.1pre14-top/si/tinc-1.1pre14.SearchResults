@@ -1,0 +1,13 @@
+---- REQ_RELOAD Matches (12 in 5 files) ----
+Control.c (src):		case REQ_RELOAD:
+Control.c (src):			return control_return(c, REQ_RELOAD, result);
+Control_common.h (src):	REQ_RELOAD,
+Invitation.c (src):			sendline(fd, "%d %d", CONTROL, REQ_RELOAD);
+Tincctl.c (src):	sendline(fd, "%d %d", CONTROL, REQ_RELOAD);
+Tincctl.c (src):	if(!recvline(fd, line, sizeof line) || sscanf(line, "%d %d %d", &code, &req, &result) != 3 || code != CONTROL || req != REQ_RELOAD || result) {
+Tincctl.c (src):		sendline(fd, "%d %d", CONTROL, REQ_RELOAD);
+Tincctl.c (src):		sendline(fd, "%d %d", CONTROL, REQ_RELOAD);
+Tinctop.c (src):	sendline(fd, "%d %d", CONTROL, REQ_RELOAD);
+Tinctop.c (src):	if(!recvline(fd, line, sizeof line) || sscanf(line, "%d %d %d", &code, &req, &result) != 3 || code != CONTROL || req != REQ_RELOAD || result) {
+Tinctop.c (src):		sendline(fd, "%d %d", CONTROL, REQ_RELOAD);
+Tinctop.c (src):		sendline(fd, "%d %d", CONTROL, REQ_RELOAD);
