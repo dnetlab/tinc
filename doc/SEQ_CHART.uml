@@ -1,7 +1,4 @@
 @startuml
-
-
-
 (_start )-down->(_bbc_start_main )
 (_bbc_start_main )-down->(main )
 (main )-down->(main_loop )
@@ -21,6 +18,7 @@
 (handle_device_data )-down->(route )
 (route ).down.>(route_mac )
 (route ).down.>(route_ipv4 )
+(route ).down.>(tap/tun )
 (receive_udppacket )-down->(receive_packet )
 (receive_packet )-left->(logger )
 (handle_incoming_vpn_data ).right.>(recvfrom )
@@ -55,7 +53,4 @@
 (send_udppacket )-left->(_mcount )
 (logger )-left->(_mcount )
 (read_packet )-right->(_mcount )
-
-
-
 @enduml
