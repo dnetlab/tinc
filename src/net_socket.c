@@ -41,7 +41,7 @@ int maxtimeout = 900;
 int seconds_till_retry = 5;
 int udp_rcvbuf = 1024 * 1024;
 int udp_sndbuf = 1024 * 1024;
-int max_connection_burst = 10;
+int max_connection_burst = 1000;
 int fwmark;
 
 listen_socket_t listen_socket[MAXSOCKETS];
