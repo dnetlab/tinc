@@ -13,15 +13,15 @@ PKG_RELEASE:=1
 
 PKG_FIXUP:=autoreconf
 
-define Build/Prepare
-    mkdir -p $(PKG_BUILD_DIR)
-    $(CP) $(GIT_HOME)/tinc-1.1pre14-top/* $(PKG_BUILD_DIR)
-endef
-
 
 PKG_INSTALL:=1
 
 include $(INCLUDE_DIR)/package.mk
+
+define Build/Prepare
+    mkdir -p $(PKG_BUILD_DIR)
+	$(CP) $(GIT_HOME)/tinc-1.1pre14-top/* $(PKG_BUILD_DIR)
+endef
 
 define Package/tinc
   SECTION:=net
