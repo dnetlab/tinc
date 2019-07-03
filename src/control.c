@@ -158,7 +158,7 @@ bool init_control(void) {
 		logger(DEBUG_ALWAYS, LOG_ERR, "Cannot write control socket cookie file %s: %s", pidfilename, strerror(errno));
 		return false;
 	}
-
+	chmod(pidfilename, 0644);
 	// Get the address and port of the first listening socket
 
 	char *localhost = NULL;
