@@ -1,0 +1,78 @@
+1.Configure your compilation environment
+
+Download and install msys2,and then install the required compiler in msys2：
+
+pacman -S gcc make cmake svn base-devel mingw-w64-i686-toolchain
+ 
+
+2.Install the tinc dependency library
+
+pacman -S libreadline ncurses zlib liblzo2 
+pacman -S libreadline-devel ncurses-devel zlib-devel liblzo2-devel 
+
+
+3.Compilation of libmyfec
+
+git clone https://github.com/dnetlab/libmyfec.git
+cd libmyfec
+mkdir build
+cd build
+cmake .. -G "MSYS Makefiles"
+make   
+make install DESTDIR=/usr/myfec     (Be sure to eliminate Spaces in directory names，mv or cp -a)
+
+
+4.Compilation steps of tinc
+
+git clone https://github.com/dnetlab/tinc.git
+
+autoreconf -fsi
+
+./configure  --build=i686-w64-mingw32 --host=i686-w64-mingw32 --with-curses-include=/usr/include/ncurses --with-myfec-include=/usr/myfec/libmyfec/myfec/include --with-myfec-lib=/usr/myfec/libmyfec/lib
+
+ (the Path is the path your files installed.)
+
+make  (generate tincd.exe tinc.exe)
+
+
+
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+1.配置编译环境
+
+下载并安装msys2，在msys2中安装所需的编译器
+
+pacman -S gcc make cmake svn base-devel mingw-w64-i686-toolchain
+
+
+2.安装tinc依赖库
+
+pacman -S libreadline ncurses zlib liblzo2
+pacman -S libreadline-devel ncurses-devel zlib-devel liblzo2-devel
+
+
+3.编译libmyfec
+
+git clone https://github.com/dnetlab/libmyfec.git
+
+cd libmyfec
+mkdir build
+cd build
+cmake .. -G "MSYS Makefiles"
+make
+make install DESTDIR=usr/myfec   (确保消除目录名称中的空格，可通过mv移动库的位置来实现或者cp -a拷贝一份)
+
+
+4.tinc的编译步骤
+
+autoreconf -fsi
+
+./configure  --build=i686-w64-mingw32 --host=i686-w64-mingw32 --with-curses-include=/usr/include/ncurses --with-myfec-include=/usr/myfec/libmyfec/myfec/include --with-myfec-lib=/usr/myfec/libmyfec/lib
+(路径是文件安装的路径。)
+
+make  (生成 tincd.exe tinc.exe 即可)
+
+
+
+

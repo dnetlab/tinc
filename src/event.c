@@ -378,7 +378,7 @@ bool event_loop(void) {
 	while(running) {
 		struct timeval diff;
 		struct timeval *tv = get_time_remaining(&diff);
-		DWORD timeout_ms = tv ? (DWORD)(tv->tv_sec * 1000 + tv->tv_usec / 1000 + 1) : WSA_INFINITE;
+		DWORD timeout_ms = tv ? (tv->tv_sec * 1000 + tv->tv_usec / 1000 + 1) : WSA_INFINITE;
 
 		if(!event_count) {
 			Sleep(timeout_ms);
@@ -435,12 +435,12 @@ bool event_loop(void) {
 				break;
 			}
 
-			if(result >= event_count - event_offset) {
+			if(result < WSA_WAIT_EVENT_0 || result >= WSA_WAIT_EVENT_0 + event_count - event_offset) {
 				return(false);
 			}
 
 			/* Look up io in the map by index. */
-			event_index = result - event_offset;
+			event_index = result - WSA_WAIT_EVENT_0 + event_offset;
 			io_t *io = io_map[event_index];
 
 			if(io->fd == -1) {
