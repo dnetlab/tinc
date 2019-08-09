@@ -179,7 +179,7 @@ static void loss_calculate(node_t* n) {
 		loss_reset(n);
 	}
 
-	logger(DEBUG_STATUS, LOG_INFO,
+	logger(DEBUG_TRAFFIC, LOG_INFO,
 			"To %s (%s) loss parameter total_recv %d\n",
 			n->name, n->hostname, total_recv);
 	if (total_recv >= 100) {
