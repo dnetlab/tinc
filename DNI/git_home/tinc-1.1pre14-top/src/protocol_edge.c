@@ -177,8 +177,8 @@ bool add_edge_h(connection_t *c, const char *request) {
 				e->local_address = local_address;
 
 				// Tell others about it.
-				if(!tunnelserver)
-					forward_request(c, request);
+				//if(!tunnelserver)
+					//forward_request(c, request);
 
 				return true;
 			} else {
