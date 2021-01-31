@@ -41,6 +41,11 @@ chacha_poly1305_SOURCES = \
 	chacha-poly1305/chacha.c chacha-poly1305/chacha.h \
 	chacha-poly1305/chacha-poly1305.c chacha-poly1305/chacha-poly1305.h \
 	chacha-poly1305/poly1305.c chacha-poly1305/poly1305.h
+	
+fec_SOURCES = \
+	fec/fec_core.c fec/fec_core.h fec/fec.c fec/fec.h fec/sfmemcap.c fec/sfprimetable.h \
+	fec/mycommon.c fec/mycommon.h fec/sfhashfcn.c fec/sfhashfcn.h fec/sfxhash.c fec/sfxhash.h \
+	fec/my_debug.c fec/my_debug.h fec/rs.c fec/rs.h  fec/sfprimetable.c fec/sfmemcap.h
 
 tincd_SOURCES = \
 	address_cache.c address_cache.h \
@@ -104,7 +109,8 @@ tincd_SOURCES = \
 	ed25519/ecdh.c \
 	ed25519/ecdsa.c \
 	$(ed25519_SOURCES) \
-	$(chacha_poly1305_SOURCES)
+	$(chacha_poly1305_SOURCES) \
+	$(fec_SOURCES)
 
 tinc_SOURCES = \
 	dropin.c dropin.h \

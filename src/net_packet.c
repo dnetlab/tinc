@@ -31,6 +31,10 @@
 #include LZO1X_H
 #endif
 
+#ifdef HAVE_LZ4
+#include <lz4.h>
+#endif
+
 #include "address_cache.h"
 #include "cipher.h"
 #include "conf.h"
@@ -49,7 +53,7 @@
 #include "route.h"
 #include "utils.h"
 #include "xalloc.h"
-#include "myfec.h"
+#include "fec/fec.h"
 
 #ifndef MAX
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
@@ -145,7 +149,7 @@ static void fec_adjust(node_t* n) {
 		if (n->fec_ctx) {
 			if (re_num == 0) {
 				logger(DEBUG_STATUS, LOG_INFO,
-						"To %s (%s) Loss rate < 2% close fec.\n",
+						"To %s (%s) Loss rate < 2 percent close fec.\n",
 						n->name, n->hostname);
 
 				n->status.fec_confirmed = 0;
@@ -162,7 +166,7 @@ static void fec_adjust(node_t* n) {
 			logger(DEBUG_STATUS, LOG_INFO,
 					"To %s (%s) Start user fec.\n", n->name, n->hostname);
 
-			n->fec_ctx = (myfec_ctx_t* )xzalloc(sizeof(myfec_ctx_t));
+			n->fec_ctx = (fec_ctx_t* )xzalloc(sizeof(fec_ctx_t));
 			myfec_init(n->fec_ctx, 100, re_num, 1400, 10);
 			n->status.fec_confirmed = 1;
 		}
@@ -197,7 +201,6 @@ static void loss_num_handler(node_t *n) {
 	loss_calculate(n);
 }
 
-/* Added by yanbowen */
 static void loss_timeout_handler(void *data) {
 	node_t *n = data;
 	if (!n->status.loss_modify) {
@@ -211,7 +214,6 @@ static void loss_timeout_handler(void *data) {
     loss_start(n);
 }
 
-/* Added by yanbowen */
 static void loss_start(node_t *n) {
 	if (!n->status.loss_timeout_init) {
 		struct timeval tv;
@@ -354,7 +356,7 @@ static void udp_probe_h(node_t *n, vpn_packet_t *packet, length_t len) {
 	else if(DATA(packet)[0] == 0x80) {
 		send_fec_probe_reply(n, packet, len);
 		if (!n->fec_recv_ctx) {
-			n->fec_recv_ctx = (myfec_ctx_t* )xzalloc(sizeof(myfec_ctx_t));
+			n->fec_recv_ctx = (fec_ctx_t* )xzalloc(sizeof(fec_ctx_t));
 			// init fec recv args is invalid.
 			myfec_init(n->fec_recv_ctx, 100, 1, 1400, 10);
 		}
@@ -364,7 +366,7 @@ static void udp_probe_h(node_t *n, vpn_packet_t *packet, length_t len) {
 	else if(DATA(packet)[0] == 0x81) {
 		// if fec loss probe never send, then send it.
 		if (!n->fec_recv_ctx) {
-			n->fec_recv_ctx = (myfec_ctx_t* )xzalloc(sizeof(myfec_ctx_t));
+			n->fec_recv_ctx = (fec_ctx_t* )xzalloc(sizeof(fec_ctx_t));
 			// init fec recv args is invalid.
 			myfec_init(n->fec_recv_ctx, 100, 1, 1400, 10);
 		}
@@ -447,7 +449,16 @@ static length_t compress_packet(uint8_t *dest, const uint8_t *source, length_t l
 	if(level == 0) {
 		memcpy(dest, source, len);
 		return len;
-	} else if(level == 10) {
+	} else if(level == 20) {
+#ifdef HAVE_LZ4
+		unsigned long compressed_data_size = MAXSIZE;
+		int max_dst_size = LZ4_compressBound(len);
+		compressed_data_size = LZ4_compress_default(source, dest, len, max_dst_size);
+		return compressed_data_size;
+#else
+		return 0;
+#endif
+	}  else if(level == 10) {
 #ifdef HAVE_LZO
 		lzo_uint lzolen = MAXSIZE;
 		lzo1x_1_compress(source, len, dest, &lzolen, lzo_wrkmem);
@@ -481,6 +492,17 @@ static length_t uncompress_packet(uint8_t *dest, const uint8_t *source, length_t
 	if(level == 0) {
 		memcpy(dest, source, len);
 		return len;
+	} else if(level == 20) {
+#ifdef HAVE_LZ4
+
+		int dest_len = MAXSIZE;
+		const int decompressed_size = LZ4_decompress_safe(source, dest, len, &dest_len);
+
+		if(decompressed_size >= 0) {
+			return decompressed_size;
+		} else
+#endif
+			return 0;
 	} else if(level > 9) {
 #ifdef HAVE_LZO
 		lzo_uint lzolen = MAXSIZE;
@@ -533,13 +555,13 @@ static void receive_packet(node_t *n, vpn_packet_t *packet) {
 	route(n, packet);
 }
 
-/* receive a fec packet, added by dailei */
+/* receive a fec packet */
 static void receive_fec_packet(node_t *n, vpn_packet_t *packet) {
 	logger(DEBUG_TRAFFIC, LOG_DEBUG, "Received FEC packet len = %d", packet->len);
 	//dump_data_header(DATA(packet) + 14);
 	logger(DEBUG_TRAFFIC, LOG_DEBUG, "FEC ctx = %p", n->fec_recv_ctx);
 	if (!n->fec_recv_ctx) {
-		n->fec_ctx = (myfec_ctx_t* )xzalloc(sizeof(myfec_ctx_t));
+		n->fec_ctx = (fec_ctx_t* )xzalloc(sizeof(fec_ctx_t));
 		myfec_init(n->fec_recv_ctx, 100, 1, 1400, 10);
 	}
 	int dec_ret = myfec_decode(n->fec_recv_ctx, DATA(packet) + 14, packet->len - packet->offset - 14);
@@ -1192,6 +1214,9 @@ static void send_udppacket(node_t *n, vpn_packet_t *origpkt) {
 			       n->name, n->hostname);
 			return;
 		}
+
+		logger(DEBUG_TRAFFIC, LOG_INFO, "compressing packet to %s (%s), Ratio: %.2f\n",
+				 n->name, n->hostname, (float) outpkt->len/inpkt->len);
 
 		inpkt = outpkt;
 	}

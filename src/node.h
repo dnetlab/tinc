@@ -27,7 +27,7 @@
 #include "digest.h"
 #include "event.h"
 #include "subnet.h"
-#include "myfec.h"
+#include "fec/fec.h"
 
 #define TRAFFIC_TIMEOUT_SEC (5)
 
@@ -144,11 +144,11 @@ typedef struct node_t {
 	timeout_t traffic_timeout;	/* traffic timeout event */
 
 	struct address_cache_t *address_cache;
-	myfec_ctx_t* fec_ctx;                   /* FEC ctx */
+	fec_ctx_t* 	 fec_ctx;                   /* FEC ctx */
 	timeout_t    fec_timeout;               /* FEC send buffer timeout event */
 	int          fec_timer_started;         /* FEC timer started flag */
 
-    myfec_ctx_t* fec_recv_ctx;				/* fec recv ctx*/
+    fec_ctx_t* fec_recv_ctx;				/* fec recv ctx*/
 
 	struct loss_t *loss;
 	timeout_t     loss_timeout;         	/* calculate loss timeout event */
@@ -168,6 +168,7 @@ extern node_t *lookup_node_id(const node_id_t *id);
 extern node_t *lookup_node_udp(const sockaddr_t *sa);
 extern bool dump_nodes(struct connection_t *c);
 extern bool dump_traffic(struct connection_t *c);
+extern bool dump_traffic2(struct connection_t *c);
 extern void update_node_udp(node_t *n, const sockaddr_t *sa);
 
 #endif

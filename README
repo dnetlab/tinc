@@ -66,6 +66,7 @@ The following libraries are used by default, but can be disabled if necessary:
 
 - zlib (https://zlib.net/)
 - LZO (https://www.oberhumer.com/opensource/lzo/)
+- LZ4 (https://github.com/lz4/lz4)
 - ncurses (https://invisible-island.net/ncurses/)
 - readline (https://cnswww.cns.cwru.edu/php/chet/readline/rltop.html)
 
