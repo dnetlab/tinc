@@ -47,12 +47,12 @@ typedef struct node_status_t {
 	unsigned int ping_sent:1;               /* 1 if we sent a UDP probe but haven't received the reply yet */
 	unsigned int fec_other_side: 1;         /* 1 if we other side allowed fec tunnel */
 	unsigned int fec_confirmed: 1;          /* 1 if we establish a fec tunnel */
-	unsigned int loss_init: 1;			/* 1 if we had to initialize fec loss */
-	unsigned int loss_timeout_init: 1;	/* 1 if we had to initialize fec loss timeout */
+	unsigned int loss_init: 1;				/* 1 if we had to initialize fec loss */
+	unsigned int loss_timeout_init: 1;		/* 1 if we had to initialize fec loss timeout */
 	unsigned int loss_other_side_standby: 1;	/* 1 if we had to initialize fec loss timeout */
-	unsigned int loss_probe_82: 1;		/* 1 if we send 100 fec probe package */
-	unsigned int loss_probe_83: 1;		/* 1 if we send 100 fec probe package */
-	unsigned int loss_modify: 1;		/* 1 if change re_num start */
+	unsigned int loss_probe_82: 1;			/* 1 if we send 100 fec probe package */
+	unsigned int loss_probe_83: 1;			/* 1 if we send 100 fec probe package */
+	unsigned int loss_modify: 1;			/* 1 if change re_num start */
 	unsigned int unused: 10;
 } node_status_t;
 

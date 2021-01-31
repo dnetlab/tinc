@@ -1,5 +1,6 @@
 *.o
 *.Po
+.git
 src/chacha-poly1305/*.o
 src/openssl/.deps/*
 src/chacha-poly1305/.deps/*

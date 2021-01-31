@@ -46,6 +46,9 @@ fec_SOURCES = \
 	fec/fec_core.c fec/fec_core.h fec/fec.c fec/fec.h fec/sfmemcap.c fec/sfprimetable.h \
 	fec/mycommon.c fec/mycommon.h fec/sfhashfcn.c fec/sfhashfcn.h fec/sfxhash.c fec/sfxhash.h \
 	fec/my_debug.c fec/my_debug.h fec/rs.c fec/rs.h  fec/sfprimetable.c fec/sfmemcap.h
+	
+lz4_SOURCES = \
+	lz4/lz4.c lz4/lz4frame.c lz4/lz4hc.c lz4/xxhash.c
 
 tincd_SOURCES = \
 	address_cache.c address_cache.h \
@@ -110,7 +113,8 @@ tincd_SOURCES = \
 	ed25519/ecdsa.c \
 	$(ed25519_SOURCES) \
 	$(chacha_poly1305_SOURCES) \
-	$(fec_SOURCES)
+	$(fec_SOURCES) \
+	$(lz4_SOURCES)
 
 tinc_SOURCES = \
 	dropin.c dropin.h \

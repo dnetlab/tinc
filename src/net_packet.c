@@ -31,9 +31,6 @@
 #include LZO1X_H
 #endif
 
-#ifdef HAVE_LZ4
-#include <lz4.h>
-#endif
 
 #include "address_cache.h"
 #include "cipher.h"
@@ -54,6 +51,8 @@
 #include "utils.h"
 #include "xalloc.h"
 #include "fec/fec.h"
+#include "lz4/lz4.h"
+
 
 #ifndef MAX
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
@@ -126,10 +125,17 @@ static void udp_probe_timeout_handler(void *data) {
     n->status.udp_confirmed = false;
 }
 
+/* 使用FEC时，测量丢包率（过去10秒的rolling average），
+ * 	发包冗余 = 20%(2 <= 丢包率 <= 10 )
+ * 			30%(10 <= 丢包率 <= 20 )
+ * 			40%(20 <= 丢包率) */
 static int loss_to_re_num(node_t* n) {
 	int loss = n->loss->loss_rate;
     int x = 0;
-    if (1 <= loss && loss < 10) {
+    if (1 <= loss && loss < 5) {
+        x = 1;
+    }
+    else if (5 <= loss && loss < 10) {
         x = 2;
     }
     else if (10 <= loss && loss < 20) {
@@ -145,6 +151,7 @@ static int loss_to_re_num(node_t* n) {
  * then if (re_num != 0) init fec*/
 static void fec_adjust(node_t* n) {
 	int re_num = loss_to_re_num(n);
+
 	if (n->status.fec_other_side) {
 		if (n->fec_ctx) {
 			if (re_num == 0) {
@@ -446,19 +453,16 @@ static void udp_probe_h(node_t *n, vpn_packet_t *packet, length_t len) {
 }
 
 static length_t compress_packet(uint8_t *dest, const uint8_t *source, length_t len, int level) {
-	if(level == 0) {
+	if(level == 12) { //lz4 compression
+			unsigned long compressed_data_size = MAXSIZE;
+			int max_dst_size = LZ4_compressBound(len);
+			compressed_data_size = LZ4_compress_default((const char *)source, (const char *)dest, len, max_dst_size);
+			return compressed_data_size;
+	}
+	else if(level == 0) {
 		memcpy(dest, source, len);
 		return len;
-	} else if(level == 20) {
-#ifdef HAVE_LZ4
-		unsigned long compressed_data_size = MAXSIZE;
-		int max_dst_size = LZ4_compressBound(len);
-		compressed_data_size = LZ4_compress_default(source, dest, len, max_dst_size);
-		return compressed_data_size;
-#else
-		return 0;
-#endif
-	}  else if(level == 10) {
+	} else if(level == 10) {
 #ifdef HAVE_LZO
 		lzo_uint lzolen = MAXSIZE;
 		lzo1x_1_compress(source, len, dest, &lzolen, lzo_wrkmem);
@@ -489,20 +493,16 @@ static length_t compress_packet(uint8_t *dest, const uint8_t *source, length_t l
 }
 
 static length_t uncompress_packet(uint8_t *dest, const uint8_t *source, length_t len, int level) {
-	if(level == 0) {
-		memcpy(dest, source, len);
-		return len;
-	} else if(level == 20) {
-#ifdef HAVE_LZ4
-
+	if(level == 12) { //lz4 compression
 		int dest_len = MAXSIZE;
-		const int decompressed_size = LZ4_decompress_safe(source, dest, len, &dest_len);
-
+		const int decompressed_size = LZ4_decompress_safe((const char *)source, (const char *)dest, len, dest_len);
 		if(decompressed_size >= 0) {
 			return decompressed_size;
 		} else
-#endif
 			return 0;
+	} else if(level == 0) {
+			memcpy(dest, source, len);
+			return len;
 	} else if(level > 9) {
 #ifdef HAVE_LZO
 		lzo_uint lzolen = MAXSIZE;
@@ -1108,7 +1108,7 @@ void send_to_fec_only(node_t *n, int sock, sockaddr_t* sa)
 /* send to fec buf, and encode */
 static void send_to_fec(node_t *n, vpn_packet_t *inpkt, int sock, sockaddr_t* sa) {
 	//int input_ret = myfec_encode_input(n->fec_ctx, SEQNO(inpkt), inpkt->len);
-	int input_ret = myfec_encode_input(n->fec_ctx, DATA(inpkt), inpkt->len);
+	int input_ret = myfec_encode_input(n->fec_ctx,(char *) DATA(inpkt), inpkt->len);
 	logger(DEBUG_TRAFFIC, LOG_INFO, "myfec_encode_input ret %d", input_ret);
 	//MY_DEBUG_INFO("encode input ret = %d\n", input_ret);
 	if (input_ret == 1)
@@ -1139,7 +1139,7 @@ static void send_to_fec(node_t *n, vpn_packet_t *inpkt, int sock, sockaddr_t* sa
 
 static void send_fecpacket(node_t *n, vpn_packet_t *origpkt)
 {
-	const sockaddr_t *sa = NULL;
+	sockaddr_t *sa = NULL;
 	int sock;
 
 	if(n->status.send_locally) {
@@ -1149,7 +1149,7 @@ static void send_fecpacket(node_t *n, vpn_packet_t *origpkt)
 	if(!sa) {
 		choose_udp_address(n, &sa, &sock);
 	}
-	send_to_fec(n, origpkt, sock, sa);
+	send_to_fec(n, origpkt, sock, (sockaddr_t*)sa);
 	return;
 }
 

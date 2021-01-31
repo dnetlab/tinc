@@ -1040,12 +1040,12 @@ static bool setup_myself(void) {
 	/* Compression, default using lz4 */
 
 	if(get_config_int(lookup_config(config_tree, "Compression"), &myself->incompression)) {
-		if(myself->incompression < 0 || myself->incompression > 31) {
+		if(myself->incompression < 0 || myself->incompression > 12) {
 			logger(DEBUG_ALWAYS, LOG_ERR, "Bogus compression level!");
 			return false;
 		}
 	} else {
-		myself->incompression = 20;
+		myself->incompression = 12;
 	}
 
 	myself->connection->outcompression = 0;

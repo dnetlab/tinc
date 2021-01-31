@@ -1,11 +1,12 @@
 
 # Forward Error Correction
 ## Features and Design
-- [x] compitable with existing version 1.1
+- [x] compitable with existing version 1.1,但是暂时只支持OpenSSL的加密的数据包，不支持SP2SP的数据包 ( **ExperimentalProtocol=false**)
 - [x] adding FEC enconding and deconding to net_packet.c
 - [x] 4ms wait or xxx buf limit to trigger the FEC encoding and sent 
 - [x] 如果延时小于10ms (过去10秒的平均值，每隔 10分钟测量一次），不使用FEC
 - [x] 使用FEC时，测量丢包率（过去10秒的rolling average），发包冗余 = 20%(2 <= 丢包率 <= 10 ) 30%(10 <= 丢包率 <= 20 ) 40%(20 <= 丢包率) 
+
 
 ## Configuration Variables
 
@@ -44,6 +45,10 @@ B -> A : net_packet:send_fec_probe_reply
 ```
 
 @startuml
+B -[#blue]> B : myfec:calculate_packet_lossy
+B -> A : net_packet:send_fec_feedback
+A -[#blue]> A : myfec:myfec_adjust_params
+
 A -> A : net_packet:handle_device_data
 A -> A : route:route
 A -> A : route:route_mac
@@ -55,10 +60,10 @@ A -[#blue]> A :myfec:myfec_encode_output
 A -> B : net_packet:sendto
 B -> B : net_packet:handle_incoming_vpn_data
 B -> B : net_packet:handle_incoming_vpn_packet
-B -> B : net_packet:handle_incoming_vpn_packet
+B -> B : net_packet:receive_udppacket
 B -> B : net_packet:receive_fecpacket
 B -[#blue]> B : myfec:myfec_decode
-B -> B : net_packet:write to vnic...
+B -> B : net_packet:route
 @enduml
 
 ```
